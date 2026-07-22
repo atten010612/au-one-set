@@ -101,7 +101,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--noise-reduction", type=float, default=12.0, help="降噪量（dB）")
     parser.add_argument("--noise-floor", type=float, default=-50.0, help="估计底噪（dBFS）")
     parser.add_argument("--silence-threshold", type=float, default=-45.0, help="静音阈值（dBFS）")
-    parser.add_argument("--silence-duration", type=float, default=0.20, help="最短头尾静音（秒）")
+    parser.add_argument(
+        "--speech-confirmation",
+        "--silence-duration",
+        dest="speech_confirmation",
+        type=float,
+        default=0.02,
+        help="确认进入人声所需的连续非静音时长（秒）",
+    )
     parser.add_argument("--keep-silence", type=float, default=0.15, help="头尾保留静音（秒）")
     parser.add_argument("--target-lufs", type=float, default=-16.0, help="目标综合响度（LUFS）")
     parser.add_argument("--true-peak", type=float, default=-1.5, help="目标真峰值（dBTP）")
@@ -127,7 +134,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--workers 必须大于等于 1")
     if not -70 <= args.silence_threshold <= -10:
         parser.error("--silence-threshold 应在 -70 到 -10 dBFS 之间")
-    if args.keep_silence < 0 or args.silence_duration < 0:
+    if args.keep_silence < 0 or args.speech_confirmation < 0:
         parser.error("静音时长不能为负数")
     return args
 
@@ -377,7 +384,7 @@ def settings_signature(
         "noise_reduction": args.noise_reduction,
         "noise_floor": args.noise_floor,
         "silence_threshold": args.silence_threshold,
-        "silence_duration": args.silence_duration,
+        "speech_confirmation": args.speech_confirmation,
         "keep_silence": args.keep_silence,
         "target_lufs": args.target_lufs,
         "true_peak": args.true_peak,
@@ -398,7 +405,7 @@ def preprocessing_filter(args: argparse.Namespace, steps: set[str]) -> str | Non
     if "trim" in steps:
         trim = (
             "silenceremove="
-            f"start_periods=1:start_duration={args.silence_duration:g}:"
+            f"start_periods=1:start_duration={args.speech_confirmation:g}:"
             f"start_threshold={args.silence_threshold:g}dB:"
             f"start_silence={args.keep_silence:g}:detection=rms:window=0.02"
         )
@@ -560,7 +567,7 @@ def process_one(
             message="源文件未改变，已有成功输出",
             settings_signature=signature,
             completed_steps_before=prior.get("completed_steps_before", sorted(completed)),
-            applied_steps=[],
+            applied_steps=prior.get("applied_steps", []),
             duration_before=prior.get("duration_before"),
             duration_after=prior.get("duration_after"),
             measured_lufs=prior.get("measured_lufs"),

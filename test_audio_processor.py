@@ -54,7 +54,7 @@ class AudioProcessorTests(unittest.TestCase):
         args = argparse.Namespace(
             noise_reduction=12.0,
             noise_floor=-50.0,
-            silence_duration=0.2,
+            speech_confirmation=0.02,
             silence_threshold=-45.0,
             keep_silence=0.15,
         )
