@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import audio_processor
 
@@ -119,6 +120,30 @@ class AudioProcessorTests(unittest.TestCase):
                 {item["status"] for item in report["results"]},
                 {"processed", "failed"},
             )
+
+    def test_winget_runs_through_cmd_to_avoid_app_alias_error(self) -> None:
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch.object(audio_processor.os, "name", "nt"),
+            mock.patch.object(audio_processor.shutil, "which", return_value="winget.exe"),
+            mock.patch.object(audio_processor.subprocess, "run", return_value=completed) as run,
+        ):
+            self.assertTrue(audio_processor.install_ffmpeg_with_winget())
+        command = run.call_args.args[0]
+        self.assertEqual(command[:4], ["cmd.exe", "/d", "/c", "winget"])
+        self.assertIn("Gyan.FFmpeg", command)
+
+    def test_winget_access_error_is_reported_without_traceback(self) -> None:
+        with (
+            mock.patch.object(audio_processor.os, "name", "nt"),
+            mock.patch.object(audio_processor.shutil, "which", return_value="winget.exe"),
+            mock.patch.object(
+                audio_processor.subprocess,
+                "run",
+                side_effect=OSError(1920, "系统无法访问此文件"),
+            ),
+        ):
+            self.assertFalse(audio_processor.install_ffmpeg_with_winget())
 
 
 if __name__ == "__main__":

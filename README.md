@@ -30,6 +30,14 @@ py -3 audio_processor.py --install-ffmpeg
 
 首次运行且没有找到 FFmpeg 时，脚本也会询问是否通过 `winget` 安装。安装后如果仍提示找不到 FFmpeg，请关闭窗口并重新运行。
 
+如果 Windows 的应用执行别名被安全策略拦截，可以先在 CMD 中手动安装：
+
+```bat
+winget install -e --id Gyan.FFmpeg --source winget
+```
+
+安装结束后关闭并重新打开 CMD，再运行脚本。也可以下载 Windows 版 FFmpeg，将 `ffmpeg.exe` 和 `ffprobe.exe` 放入脚本旁边的 `tools` 文件夹，完全绕过系统安装。
+
 ### 拖拽处理
 
 将以下任一种内容拖到 `处理音频.bat`：

@@ -163,21 +163,38 @@ def find_executable(name: str, explicit: str | None = None) -> str | None:
 def install_ffmpeg_with_winget() -> bool:
     if os.name != "nt":
         return False
-    winget = shutil.which("winget")
-    if not winget:
+    if not shutil.which("winget"):
         log("未找到 winget，无法自动安装 FFmpeg。")
         return False
     log("正在通过 winget 安装 FFmpeg，请稍候……")
+    # WindowsApps exposes winget through an app-execution alias. Calling the
+    # resolved alias directly from CreateProcess can fail with WinError 1920,
+    # although the exact same command works in cmd.exe.
     command = [
-        winget,
+        "cmd.exe",
+        "/d",
+        "/c",
+        "winget",
         "install",
         "--id",
         "Gyan.FFmpeg",
         "-e",
+        "--source",
+        "winget",
         "--accept-package-agreements",
         "--accept-source-agreements",
     ]
-    return subprocess.run(command, check=False).returncode == 0
+    try:
+        process = subprocess.run(command, check=False)
+    except OSError as error:
+        log(f"无法启动 winget：{error}")
+        log("请在 CMD 中手动运行：winget install -e --id Gyan.FFmpeg --source winget")
+        return False
+    if process.returncode:
+        log(f"winget 安装失败，退出代码：{process.returncode}")
+        log("请在 CMD 中手动运行：winget install -e --id Gyan.FFmpeg --source winget")
+        return False
+    return True
 
 
 def resolve_ffmpeg(args: argparse.Namespace) -> tuple[str, str]:
