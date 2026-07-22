@@ -1,0 +1,5 @@
+file,completed_steps
+已经降噪.wav,denoise
+已经降噪和裁剪.mp3,denoise|trim
+已经全部处理.m4a,all
+尚未处理.flac,none
