@@ -348,12 +348,7 @@ def load_reports(output_dirs: Iterable[Path]) -> dict[str, dict[str, Any]]:
             continue
         for result in data.get("results", []):
             if result.get("status") in {"processed", "copied", "skipped"}:
-                key = (
-                    f"{str(result.get('source', '')).casefold()}::"
-                    f"{result.get('source_sha256', '')}::"
-                    f"{result.get('settings_signature', '')}"
-                )
-                successful[key] = result
+                successful[result_key(result)] = result
     return successful
 
 
@@ -361,7 +356,12 @@ def choose_output(source: Path, directory: Path, overwrite: bool) -> Path:
     with OUTPUT_LOCK:
         target = directory / source.name
         key = str(target.resolve()).casefold()
-        if key not in RESERVED_OUTPUTS and (overwrite or not target.exists()):
+        is_source = target.resolve() == source.resolve()
+        if (
+            not is_source
+            and key not in RESERVED_OUTPUTS
+            and (overwrite or not target.exists())
+        ):
             RESERVED_OUTPUTS.add(key)
             return target
         index = 1
@@ -666,15 +666,41 @@ def process_one(
     )
 
 
-def write_reports(results: list[Result], output_dirs: Iterable[Path], args: argparse.Namespace) -> None:
+def result_key(result: dict[str, Any]) -> str:
+    return (
+        f"{str(result.get('source', '')).casefold()}::"
+        f"{result.get('source_sha256', '')}::"
+        f"{result.get('settings_signature', '')}"
+    )
+
+
+def write_reports(
+    results: list[Result],
+    output_dirs: Iterable[Path],
+    result_directories: dict[str, Path],
+    args: argparse.Namespace,
+) -> None:
     generated_at = datetime.now(timezone.utc).isoformat()
     for directory in set(output_dirs):
         directory.mkdir(parents=True, exist_ok=True)
         directory_results = [
             result
             for result in results
-            if result.output and Path(result.output).parent.resolve() == directory.resolve()
+            if result_directories.get(result.source, Path()) == directory
         ]
+        report_path = directory / REPORT_NAME
+        merged: dict[str, dict[str, Any]] = {}
+        if report_path.is_file():
+            try:
+                existing = json.loads(report_path.read_text(encoding="utf-8"))
+                for old_result in existing.get("results", []):
+                    if isinstance(old_result, dict):
+                        merged[result_key(old_result)] = old_result
+            except (OSError, json.JSONDecodeError):
+                pass
+        for result in directory_results:
+            serialized_result = asdict(result)
+            merged[result_key(serialized_result)] = serialized_result
         payload = {
             "version": "1.0.0",
             "generated_at": generated_at,
@@ -684,7 +710,7 @@ def write_reports(results: list[Result], output_dirs: Iterable[Path], args: argp
                 "silence_threshold": args.silence_threshold,
                 "noise_reduction": args.noise_reduction,
             },
-            "results": [asdict(result) for result in directory_results],
+            "results": list(merged.values()),
         }
         temporary = directory / f".{REPORT_NAME}.tmp"
         temporary.write_text(
@@ -761,7 +787,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 log(f"[失败] {source.name}：{error}")
 
-    write_reports(results, output_dirs, args)
+    result_directories = {
+        str(source): output_directory(source, explicit_output) for source in files
+    }
+    write_reports(results, output_dirs, result_directories, args)
     counts = {
         status: sum(result.status == status for result in results)
         for status in ("processed", "copied", "skipped", "failed")

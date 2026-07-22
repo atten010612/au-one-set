@@ -1,4 +1,5 @@
 import argparse
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,54 @@ class AudioProcessorTests(unittest.TestCase):
         untreated = audio_processor.settings_signature(args, set())
         denoised = audio_processor.settings_signature(args, {"denoise"})
         self.assertNotEqual(untreated, denoised)
+
+    def test_overwrite_never_selects_source_as_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "voice.wav"
+            source.touch()
+            audio_processor.RESERVED_OUTPUTS.clear()
+            output = audio_processor.choose_output(source, source.parent, overwrite=True)
+            self.assertNotEqual(output, source)
+            self.assertEqual(output.name, "voice_1.wav")
+
+    def test_reports_merge_separate_runs_and_include_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            args = audio_processor.parse_args([])
+            first = audio_processor.Result(
+                source="/audio/a.wav",
+                source_sha256="aaa",
+                output=str(output / "a.wav"),
+                status="processed",
+                message="ok",
+                settings_signature="settings",
+                completed_steps_before=[],
+                applied_steps=["trim"],
+            )
+            failed = audio_processor.Result(
+                source="/audio/b.wav",
+                source_sha256="",
+                output=None,
+                status="failed",
+                message="bad input",
+                settings_signature="settings",
+                completed_steps_before=[],
+                applied_steps=[],
+            )
+            audio_processor.write_reports(
+                [first], [output], {first.source: output}, args
+            )
+            audio_processor.write_reports(
+                [failed], [output], {failed.source: output}, args
+            )
+            report = json.loads(
+                (output / audio_processor.REPORT_NAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(len(report["results"]), 2)
+            self.assertEqual(
+                {item["status"] for item in report["results"]},
+                {"processed", "failed"},
+            )
 
 
 if __name__ == "__main__":
