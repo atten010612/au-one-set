@@ -264,6 +264,23 @@ class AudioProcessorTests(unittest.TestCase):
             files,
         )
 
+    def test_converter_uses_whole_folder_selection_when_audio_set_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            files = [folder / f"prompt-{index}.wav" for index in range(43)]
+            for path in files:
+                path.touch()
+            (folder / "processing-report.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                converter_automation.whole_folder_selection_candidate(files),
+                folder,
+            )
+            extra = folder / "old-output.wav"
+            extra.touch()
+            self.assertIsNone(
+                converter_automation.whole_folder_selection_candidate(files)
+            )
+
     def test_file_batch_waits_until_filename_control_closes(self) -> None:
         filename = mock.Mock()
         filename.is_visible.side_effect = [True, False]

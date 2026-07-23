@@ -18,6 +18,16 @@ PYWINAUTO_VERSION = "0.6.9"
 FORMATS = {"A", "E", "F1A", "F1C", "UMP3"}
 SAMPLE_RATES = {"8K", "12K", "16K", "24K", "32K"}
 BIT_RATES = {"8K", "16K", "24K", "32K", "40K", "48K", "56K", "64K"}
+CONVERTER_INPUT_EXTENSIONS = {
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".flac",
+    ".ogg",
+    ".opus",
+    ".wma",
+}
 
 
 class ConverterAutomationError(RuntimeError):
@@ -230,6 +240,23 @@ def file_batches(
     if current:
         batches.append(current)
     return batches
+
+
+def whole_folder_selection_candidate(files: Sequence[Path]) -> Path | None:
+    if not files:
+        return None
+    resolved = [path.resolve() for path in files]
+    parents = {path.parent for path in resolved}
+    if len(parents) != 1:
+        return None
+    parent = next(iter(parents))
+    requested = {str(path).casefold() for path in resolved}
+    available = {
+        str(path.resolve()).casefold()
+        for path in parent.iterdir()
+        if path.is_file() and path.suffix.lower() in CONVERTER_INPUT_EXTENSIONS
+    }
+    return parent if available == requested else None
 
 
 def _visible_controls(window: Any, control_type: str) -> list[Any]:
@@ -737,7 +764,70 @@ def _add_file_batch(
         time.sleep(0.3)
 
 
+def _add_whole_folder(
+    window: Any,
+    folder: Path,
+    desktop: Any,
+) -> None:
+    previous_item_count = _data_item_count(window)
+    previous_handles = _window_handles(window, desktop)
+    _click_button(window, "添加文件")
+    dialog = _find_new_dialog(window, desktop, previous_handles)
+    filename = _find_filename_edit(dialog)
+    items_view: Any | None = None
+    try:
+        dialog.set_focus()
+        _set_windows_clipboard(str(folder))
+        _send_keys("^l")
+        _send_keys("^a")
+        _send_keys("^v")
+        _send_keys("{ENTER}")
+        time.sleep(0.5)
+        items_view = dialog.child_window(auto_id="ItemsView", control_type="List")
+        items_view.wait("visible enabled", timeout=5)
+        items_view.set_focus()
+    except Exception as error:
+        try:
+            dialog.set_focus()
+            _send_keys("{ESC}")
+            monitor = filename if filename is not None else dialog
+            _wait_for_file_dialog_submission(monitor, dialog, timeout=5)
+        except Exception:
+            pass
+        raise ConverterAutomationError(
+            "文件选择窗口没有找到文件列表 ItemsView"
+        ) from error
+    try:
+        _send_keys("^a")
+        _send_keys("{ENTER}")
+        monitor = filename if filename is not None else items_view
+        _wait_for_file_dialog_submission(monitor, dialog)
+        _wait_for_added_files(window, previous_item_count)
+    except Exception:
+        try:
+            dialog.set_focus()
+            _send_keys("{ESC}")
+        except Exception:
+            pass
+        raise
+
+
 def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
+    folder = whole_folder_selection_candidate(files)
+    if folder is not None:
+        print(
+            f"[转换] 所有文件位于同一目录，执行全选：{folder}",
+            flush=True,
+        )
+        try:
+            _add_whole_folder(window, folder, desktop)
+            return
+        except Exception as error:
+            print(
+                f"[转换] 文件夹全选不可用，回退到分批导入：{error}",
+                flush=True,
+            )
+
     batches = file_batches(files)
     if not batches:
         raise ConverterAutomationError("没有要添加的音频文件")
