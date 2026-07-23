@@ -457,6 +457,31 @@ class AudioProcessorTests(unittest.TestCase):
         converter_automation._click_button(window, "开始转换")
         button.click_input.assert_called_once_with()
 
+    def test_output_directory_uses_clipboard_not_uia_set_value(self) -> None:
+        narrow_edit = mock.Mock()
+        narrow_edit.is_visible.return_value = True
+        narrow_edit.is_enabled.return_value = True
+        narrow_edit.rectangle.return_value.width.return_value = 80
+        output_edit = mock.Mock()
+        output_edit.is_visible.return_value = True
+        output_edit.is_enabled.return_value = True
+        output_edit.rectangle.return_value.width.return_value = 600
+        window = mock.Mock()
+        window.descendants.return_value = [narrow_edit, output_edit]
+        output_path = Path(r"D:\au-one-set\converted")
+        with (
+            mock.patch.object(
+                converter_automation,
+                "_set_windows_clipboard",
+            ) as set_clipboard,
+            mock.patch.object(converter_automation, "_send_keys") as send_keys,
+        ):
+            converter_automation._set_output_directory(window, output_path)
+        output_edit.click_input.assert_called_once_with()
+        output_edit.set_edit_text.assert_not_called()
+        set_clipboard.assert_called_once_with(str(output_path))
+        send_keys.assert_called_once_with("^a^v")
+
 
 if __name__ == "__main__":
     unittest.main()

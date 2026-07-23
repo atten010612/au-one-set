@@ -255,6 +255,11 @@ audio_processor_config.json
 文件提交后，脚本以主界面转换列表的行数增加作为成功标志，不等待窗口
 标题消失。按钮名称在部分版本中带有换行，匹配时会自动忽略空白字符。
 
+转换工具的“保存目录”输入框不接受 UIA `SetValue`，会返回
+`0x80131509 InvalidOperationException`。脚本会点击该输入框并通过
+Unicode 剪贴板粘贴目录。控制台会逐项显示“添加音频、设置目录、选择
+格式、选择采样率、选择码率、开始转换”，错误信息会注明失败步骤。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

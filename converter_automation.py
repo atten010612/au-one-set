@@ -254,7 +254,12 @@ def _set_output_directory(window: Any, output_directory: Path) -> None:
         raise ConverterAutomationError("没有找到“保存目录”输入框")
     # The converter 1.2.2 main window has one editable text field: 保存目录.
     edit = max(edits, key=lambda control: control.rectangle().width())
-    edit.set_edit_text(str(output_directory))
+    # Its UIA ValuePattern raises .NET InvalidOperationException (0x80131509)
+    # on SetValue. Physical focus plus clipboard paste works with this custom
+    # edit while preserving Chinese paths.
+    edit.click_input()
+    _set_windows_clipboard(str(output_directory))
+    _send_keys("^a^v")
 
 
 def _window_handles(window: Any, desktop: Any) -> set[int]:
@@ -315,6 +320,12 @@ def _set_windows_clipboard(text: str) -> None:
             win32clipboard.CloseClipboard()
     except Exception as error:
         raise ConverterAutomationError(f"无法将文件路径写入剪贴板：{error}") from error
+
+
+def _send_keys(keys: str) -> None:
+    from pywinauto.keyboard import send_keys
+
+    send_keys(keys)
 
 
 def _wait_until_hidden(window: Any, timeout: float = 30) -> None:
@@ -402,16 +413,12 @@ def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
         # Some versions expose the common file dialog as custom/shell panes
         # only. Alt+N focuses its standard 文件名(N) field; clipboard paste
         # preserves Chinese paths that pywinauto.type_keys cannot type.
-        from pywinauto.keyboard import send_keys
-
         dialog.set_focus()
         _set_windows_clipboard(file_text)
-        send_keys("%n")
-        send_keys("^a^v")
+        _send_keys("%n")
+        _send_keys("^a^v")
 
-    from pywinauto.keyboard import send_keys
-
-    send_keys("{ENTER}")
+    _send_keys("{ENTER}")
     # This converter reuses its own title/handle hierarchy for the common file
     # dialog, so waiting for the selected wrapper to disappear can actually
     # wait on the still-visible main window. The table row count is the
@@ -452,12 +459,38 @@ def automate_converter(
                 _click_button(window, "清空文件")
             except Exception:
                 pass
-        _add_files(window, files, Desktop(backend="uia"))
-        _set_output_directory(window, output_directory)
-        _select_radio(window, config.format, column=0)
-        _select_radio(window, config.sample_rate, column=1)
-        _select_radio(window, config.bit_rate, column=2)
-        _click_button(window, "开始转换")
+        steps = [
+            (
+                "添加处理后的音频",
+                lambda: _add_files(window, files, Desktop(backend="uia")),
+            ),
+            (
+                "设置保存目录",
+                lambda: _set_output_directory(window, output_directory),
+            ),
+            (
+                f"选择格式 {config.format}",
+                lambda: _select_radio(window, config.format, column=0),
+            ),
+            (
+                f"选择采样率 {config.sample_rate}",
+                lambda: _select_radio(window, config.sample_rate, column=1),
+            ),
+            (
+                f"选择码率 {config.bit_rate}",
+                lambda: _select_radio(window, config.bit_rate, column=2),
+            ),
+            (
+                "点击开始转换",
+                lambda: _click_button(window, "开始转换"),
+            ),
+        ]
+        for label, action in steps:
+            print(f"[转换] {label}……", flush=True)
+            try:
+                action()
+            except Exception as error:
+                raise ConverterAutomationError(f"{label}失败：{error}") from error
         time.sleep(0.5)
     except Exception as error:
         controls_file = diagnostics_directory / "converter-controls.txt"
