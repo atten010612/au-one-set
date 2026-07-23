@@ -639,7 +639,54 @@ def _window_message(window: Any) -> str:
                 messages.append(text)
     except Exception:
         pass
+    if not messages and getattr(window, "handle", None):
+        try:
+            from pywinauto import Desktop
+
+            native = Desktop(backend="win32").window(handle=int(window.handle))
+            for control in native.descendants():
+                text = " ".join(control.window_text().split())
+                if text and text not in messages:
+                    messages.append(text)
+        except Exception:
+            pass
     return "；".join(messages)
+
+
+def _converter_dialog_is_error(message: str) -> bool:
+    normalized = message.casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "错误",
+            "失败",
+            "没有与搜索条件匹配",
+            "请选择",
+            "异常",
+            "error",
+            "failed",
+            "no match",
+        )
+    )
+
+
+def _dismiss_converter_dialog(dialog: Any) -> bool:
+    try:
+        buttons = dialog.descendants(control_type="Button")
+    except Exception:
+        buttons = []
+    for preferred in ("确定", "完成", "ok", "关闭", "close"):
+        for button in buttons:
+            title = "".join(button.window_text().split()).casefold()
+            if title == preferred.casefold() or preferred.casefold() in title:
+                button.click()
+                return True
+    try:
+        dialog.set_focus()
+        _send_keys("{ENTER}")
+        return True
+    except Exception:
+        return False
 
 
 def _wait_for_conversion_outputs(
@@ -652,23 +699,39 @@ def _wait_for_conversion_outputs(
     timeout: float,
 ) -> int:
     deadline = time.monotonic() + timeout
+    last_dialog_message = ""
+    last_progress_report = 0.0
+    found_count = 0
     while time.monotonic() < deadline:
-        new_windows = _new_visible_windows(window, desktop, previous_handles)
-        if new_windows:
-            message = _window_message(new_windows[-1]) or "转换工具弹出错误窗口"
-            raise ConverterAutomationError(f"转换工具提示：{message}")
         current_files = _file_snapshot(output_directory)
         changed = [
             path
             for path, signature in current_files.items()
             if previous_files.get(path) != signature
         ]
+        found_count = len(changed)
         if len(changed) >= expected_count:
             return len(changed)
+        new_windows = _new_visible_windows(window, desktop, previous_handles)
+        for candidate in new_windows:
+            message = _window_message(candidate)
+            if message and _converter_dialog_is_error(message):
+                raise ConverterAutomationError(f"转换工具提示：{message}")
+            if message:
+                last_dialog_message = message
+            _dismiss_converter_dialog(candidate)
+        now = time.monotonic()
+        if now - last_progress_report >= 10:
+            print(
+                f"[转换] 已发现 {found_count}/{expected_count} 个结果，继续等待……",
+                flush=True,
+            )
+            last_progress_report = now
         time.sleep(0.25)
+    detail = f"；最后提示：{last_dialog_message}" if last_dialog_message else ""
     raise ConverterAutomationError(
         f"{timeout:g} 秒内未在 {output_directory} 发现 "
-        f"{expected_count} 个转换结果"
+        f"{expected_count} 个转换结果（实际 {found_count} 个）{detail}"
     )
 
 

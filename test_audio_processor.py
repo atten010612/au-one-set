@@ -734,6 +734,68 @@ class AudioProcessorTests(unittest.TestCase):
                     timeout=0.1,
                 )
 
+    def test_conversion_completion_dialog_is_dismissed_while_waiting(self) -> None:
+        dialog = mock.Mock()
+        dialog.window_text.return_value = "音频文件转换工具 1.2.2"
+        message = mock.Mock()
+        message.window_text.return_value = "转换完成"
+        ok = mock.Mock()
+        ok.window_text.return_value = "确定"
+
+        def descendants(control_type: str) -> list[mock.Mock]:
+            return [ok] if control_type == "Button" else [message]
+
+        dialog.descendants.side_effect = descendants
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.object(
+                converter_automation,
+                "_file_snapshot",
+                side_effect=[{}, {"result.f1a": (1, 1)}],
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_new_visible_windows",
+                return_value=[dialog],
+            ),
+        ):
+            count = converter_automation._wait_for_conversion_outputs(
+                mock.Mock(),
+                mock.Mock(),
+                Path(directory),
+                previous_files={},
+                previous_handles=set(),
+                expected_count=1,
+                timeout=1,
+            )
+        self.assertEqual(count, 1)
+        ok.click.assert_called_once_with()
+
+    def test_actual_outputs_take_priority_over_completion_popup(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.object(
+                converter_automation,
+                "_file_snapshot",
+                return_value={"result.f1a": (1, 1)},
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_new_visible_windows",
+                side_effect=AssertionError("dialog must not override outputs"),
+            ),
+        ):
+            count = converter_automation._wait_for_conversion_outputs(
+                mock.Mock(),
+                mock.Mock(),
+                Path(directory),
+                previous_files={},
+                previous_handles=set(),
+                expected_count=1,
+                timeout=0.1,
+            )
+        self.assertEqual(count, 1)
+
     def test_packer_tree_navigation_expands_each_path_component(self) -> None:
         class Item:
             def __init__(self, name: str, children: dict[str, "Item"] | None = None) -> None:
