@@ -299,6 +299,12 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 `packer_enabled` 改为 `false`。打包操作失败时，控件信息会写到
 `pRFiles.exe` 同级的 `packer-controls.txt`。
 
+该工具是 32 位 Delphi 程序，可能显示“32-bit application should be
+automated using 32-bit Python”警告；这不是失败。脚本使用其实际控件
+`TDriveComboBox`、`TDirectoryListBox` 和 `TBitBtn`，并通过原生窗口
+消息操作，不需要另外安装 32 位 Python。工具已经停留在目标
+`converted` 时会直接跳过磁盘和目录导航。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

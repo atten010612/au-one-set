@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 import time
 from dataclasses import asdict
@@ -61,8 +62,18 @@ def _normalize_tree_name(value: str) -> str:
 
 def _select_drive(window: Any, drive: str) -> None:
     desired = drive.rstrip("\\/").casefold()
-    combos = window.descendants(class_name="ComboBox")
+    combos: list[Any] = []
+    for class_name in ("TDriveComboBox", "ComboBox"):
+        try:
+            combos.extend(window.descendants(class_name=class_name))
+        except Exception:
+            pass
     for combo in combos:
+        try:
+            if combo.window_text().strip().casefold().startswith(desired):
+                return
+        except Exception:
+            pass
         try:
             items = combo.item_texts()
         except Exception:
@@ -73,6 +84,76 @@ def _select_drive(window: Any, drive: str) -> None:
                 time.sleep(0.3)
                 return
     raise PackerAutomationError(f"磁盘下拉框中没有找到 {drive}")
+
+
+def _same_path(first: str | Path, second: str | Path) -> bool:
+    return ntpath.normcase(ntpath.normpath(str(first))) == ntpath.normcase(
+        ntpath.normpath(str(second))
+    )
+
+
+def _current_directory(window: Any) -> str | None:
+    candidates: list[str] = []
+    for class_name in ("TPanel", "Static"):
+        try:
+            controls = window.descendants(class_name=class_name)
+        except Exception:
+            continue
+        for control in controls:
+            try:
+                text = control.window_text().strip()
+            except Exception:
+                continue
+            if len(text) >= 3 and text[1:3] == ":\\":
+                candidates.append(text)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda value: (value.count("\\"), len(value)))
+
+
+def _find_directory_list(window: Any) -> Any:
+    lists = window.descendants(class_name="TDirectoryListBox")
+    if not lists:
+        raise PackerAutomationError("没有找到 Delphi 目录列表 TDirectoryListBox")
+    return lists[0]
+
+
+def _matches_directory_component(item_text: str, component: str) -> bool:
+    cleaned = item_text.strip().strip("[]").rstrip("\\/")
+    basename = ntpath.basename(cleaned) or cleaned
+    return basename.casefold() == component.casefold()
+
+
+def navigate_directory_list(window: Any, directory: Path) -> None:
+    current = _current_directory(window)
+    if current and _same_path(current, directory):
+        return
+    directory_list = _find_directory_list(window)
+    for component in directory.parts[1:]:
+        try:
+            items = directory_list.item_texts()
+        except Exception as error:
+            raise PackerAutomationError(f"无法读取目录列表：{error}") from error
+        matches = [
+            index
+            for index, text in enumerate(items)
+            if _matches_directory_component(text, component)
+        ]
+        if not matches:
+            raise PackerAutomationError(
+                f"目录列表中没有找到 {component!r}；可见项：{items}"
+            )
+        directory_list.select(matches[-1])
+        time.sleep(0.2)
+        if _current_directory(window) and _same_path(
+            _current_directory(window) or "", directory
+        ):
+            return
+    current = _current_directory(window)
+    if not current or not _same_path(current, directory):
+        raise PackerAutomationError(
+            f"目录选择后路径不一致：期望 {directory}，当前 {current or '(无法读取)'}"
+        )
 
 
 def _find_tree(window: Any) -> Any:
@@ -132,17 +213,17 @@ def navigate_tree_to_directory(tree: Any, directory: Path) -> Any:
 
 
 def _click_save(window: Any) -> None:
-    try:
-        button = window.child_window(title="保存", class_name="Button")
-        button.wait("exists enabled visible", timeout=3)
-        button.click()
-        return
-    except Exception:
-        pass
-    buttons = window.descendants(class_name="Button")
+    buttons: list[Any] = []
+    for class_name in ("TBitBtn", "Button"):
+        try:
+            buttons.extend(window.descendants(class_name=class_name))
+        except Exception:
+            pass
     for button in buttons:
         if "".join(button.window_text().split()) == "保存":
-            button.click()
+            # Delphi TBitBtn is a generic HWND wrapper. BM_CLICK avoids DPI
+            # coordinates and works across 32/64-bit process boundaries.
+            button.send_message(0x00F5)
             return
     raise PackerAutomationError("没有找到“保存”按钮")
 
@@ -190,11 +271,19 @@ def automate_packer(
             "visible enabled ready",
             timeout=config.startup_timeout_seconds,
         )
-        print(f"[合成] 选择磁盘 {source_directory.drive}……", flush=True)
-        _select_drive(window, source_directory.drive)
-        print(f"[合成] 逐层进入 {source_directory}……", flush=True)
-        tree = _find_tree(window)
-        navigate_tree_to_directory(tree, source_directory)
+        current = _current_directory(window)
+        if current and _same_path(current, source_directory):
+            print(f"[合成] 当前目录已经是 {source_directory}。", flush=True)
+        else:
+            print(f"[合成] 选择磁盘 {source_directory.drive}……", flush=True)
+            _select_drive(window, source_directory.drive)
+            print(f"[合成] 逐层进入 {source_directory}……", flush=True)
+            try:
+                navigate_directory_list(window, source_directory)
+            except PackerAutomationError:
+                # Retain support for variants that use a standard TreeView.
+                tree = _find_tree(window)
+                navigate_tree_to_directory(tree, source_directory)
         time.sleep(0.5)
         print("[合成] 点击保存……", flush=True)
         _click_save(window)

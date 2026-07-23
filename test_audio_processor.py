@@ -664,11 +664,41 @@ class AudioProcessorTests(unittest.TestCase):
 
     def test_packer_drive_selection_matches_volume_prefix(self) -> None:
         combo = mock.Mock()
+        combo.window_text.return_value = "c: [系统]"
         combo.item_texts.return_value = ["c: [系统]", "d: [软件]"]
         window = mock.Mock()
         window.descendants.return_value = [combo]
         packer_automation._select_drive(window, "D:")
         combo.select.assert_called_once_with(1)
+
+    def test_packer_skips_drive_selection_when_already_selected(self) -> None:
+        combo = mock.Mock()
+        combo.window_text.return_value = "d: [软件]"
+        window = mock.Mock()
+        window.descendants.return_value = [combo]
+        packer_automation._select_drive(window, "D:")
+        combo.item_texts.assert_not_called()
+        combo.select.assert_not_called()
+
+    def test_packer_reads_delphi_current_directory_panel(self) -> None:
+        path_panel = mock.Mock()
+        path_panel.window_text.return_value = r"D:\au-one-set\converted"
+        copyright_panel = mock.Mock()
+        copyright_panel.window_text.return_value = "Copyright JL.C"
+        window = mock.Mock()
+        window.descendants.return_value = [copyright_panel, path_panel]
+        self.assertEqual(
+            packer_automation._current_directory(window),
+            r"D:\au-one-set\converted",
+        )
+
+    def test_packer_save_uses_delphi_bit_button_message(self) -> None:
+        save = mock.Mock()
+        save.window_text.return_value = "保存"
+        window = mock.Mock()
+        window.descendants.return_value = [save]
+        packer_automation._click_save(window)
+        save.send_message.assert_called_once_with(0x00F5)
 
     def test_packer_success_requires_updated_output_lst(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
