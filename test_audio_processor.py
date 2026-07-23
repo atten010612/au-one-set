@@ -255,6 +255,24 @@ class AudioProcessorTests(unittest.TestCase):
         self.assertIn("开始.wav", value)
         self.assertIn("结束.wav", value)
 
+    def test_converter_splits_large_file_sets_into_safe_batches(self) -> None:
+        files = [Path(f"prompt-{index:02d}.wav") for index in range(43)]
+        batches = converter_automation.file_batches(files)
+        self.assertEqual([len(batch) for batch in batches], [8, 8, 8, 8, 8, 3])
+        self.assertEqual(
+            [path for batch in batches for path in batch],
+            files,
+        )
+
+    def test_file_batch_waits_until_filename_control_closes(self) -> None:
+        filename = mock.Mock()
+        filename.is_visible.side_effect = [True, False]
+        converter_automation._wait_for_file_dialog_submission(
+            filename,
+            mock.Mock(),
+            timeout=0.5,
+        )
+
     def test_converter_selects_duplicate_32k_by_column(self) -> None:
         class Rectangle:
             def __init__(self, left: int) -> None:

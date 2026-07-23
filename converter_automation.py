@@ -208,6 +208,30 @@ def file_dialog_text(files: Iterable[Path]) -> str:
     return " ".join(f'"{path.resolve()}"' for path in files)
 
 
+def file_batches(
+    files: Sequence[Path],
+    max_files: int = 8,
+    max_characters: int = 3000,
+) -> list[list[Path]]:
+    batches: list[list[Path]] = []
+    current: list[Path] = []
+    current_length = 0
+    for path in files:
+        item_length = len(str(path.resolve())) + 3
+        if current and (
+            len(current) >= max_files
+            or current_length + item_length > max_characters
+        ):
+            batches.append(current)
+            current = []
+            current_length = 0
+        current.append(path)
+        current_length += item_length
+    if current:
+        batches.append(current)
+    return batches
+
+
 def _visible_controls(window: Any, control_type: str) -> list[Any]:
     return [
         control
@@ -658,7 +682,31 @@ def _find_filename_edit(dialog: Any) -> Any | None:
     return None
 
 
-def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
+def _wait_for_file_dialog_submission(
+    control: Any,
+    dialog: Any,
+    timeout: float = 30,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if not control.is_visible():
+                return
+        except Exception:
+            return
+        time.sleep(0.2)
+    message = _window_message(dialog)
+    raise ConverterAutomationError(
+        "提交文件后选择窗口仍未关闭"
+        + (f"：{message}" if message else "")
+    )
+
+
+def _add_file_batch(
+    window: Any,
+    files: Sequence[Path],
+    desktop: Any,
+) -> None:
     previous_item_count = _data_item_count(window)
     previous_handles = _window_handles(window, desktop)
     _click_button(window, "添加文件")
@@ -679,11 +727,32 @@ def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
         _send_keys("^a^v")
 
     _send_keys("{ENTER}")
-    # This converter reuses its own title/handle hierarchy for the common file
-    # dialog, so waiting for the selected wrapper to disappear can actually
-    # wait on the still-visible main window. The table row count is the
-    # reliable success signal.
-    _wait_for_added_files(window, previous_item_count)
+    monitor = filename if filename is not None else dialog
+    _wait_for_file_dialog_submission(monitor, dialog)
+    if previous_item_count == 0:
+        _wait_for_added_files(window, previous_item_count)
+    else:
+        # UIA virtualizes rows once the table is full, so its visible DataItem
+        # count may stop growing even though later batches were accepted.
+        time.sleep(0.3)
+
+
+def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
+    batches = file_batches(files)
+    if not batches:
+        raise ConverterAutomationError("没有要添加的音频文件")
+    for index, batch in enumerate(batches, start=1):
+        print(
+            f"[转换] 添加文件批次 {index}/{len(batches)}"
+            f"（{len(batch)} 个）……",
+            flush=True,
+        )
+        try:
+            _add_file_batch(window, batch, desktop)
+        except Exception as error:
+            raise ConverterAutomationError(
+                f"第 {index} 批文件添加失败：{error}"
+            ) from error
 
 
 def automate_converter(
@@ -765,7 +834,10 @@ def automate_converter(
                 previous_files,
                 previous_handles,
                 expected_count=len(files),
-                timeout=config.conversion_timeout_seconds,
+                timeout=max(
+                    config.conversion_timeout_seconds,
+                    len(files) * 5,
+                ),
             )
         except Exception as error:
             if isinstance(error, ConverterAutomationError):
