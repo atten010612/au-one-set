@@ -354,6 +354,11 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 `pRFiles.exe` 同级生成 `packer-save-as-controls.txt`，其中只记录
 “另存为”窗口，便于继续适配。
 
+另一些 `pRFiles.exe` 构建不会弹出另存为，而是直接更新同级的固定文件
+`LIST.LST`。脚本会监测其签名变化并复制为 `OUTPUT.LST`。若
+`LIST.LST/OUTPUT.LST` 都没有变化且两个自动化后端都未发现新窗口，也会
+生成 `packer-save-as-controls.txt`，列出当时所有可见窗口。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

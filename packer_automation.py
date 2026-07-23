@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import shutil
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -261,17 +262,57 @@ def _complete_save_as(
     )
 
     desktop = Desktop(backend="uia")
+    win32_desktop = Desktop(backend="win32")
     previous_handles = _window_handles(window, desktop)
+    previous_win32_handles = _window_handles(window, win32_desktop)
+    legacy_output = output.with_name("LIST.LST")
+    previous_legacy_signature = _signature(legacy_output)
     _click_save(window)
 
-    # Some builds save immediately; most open the standard Save As dialog.
-    immediate_deadline = time.monotonic() + 1
+    # Some Delphi builds save a fixed LIST.LST directly instead of opening Save
+    # As. Preserve that native file and copy it to the requested OUTPUT.LST.
+    immediate_deadline = time.monotonic() + 3
     while time.monotonic() < immediate_deadline:
         if _signature(output) not in {None, previous_signature}:
             return
+        if _promote_updated_legacy_list(output, previous_legacy_signature):
+            return
         time.sleep(0.1)
 
-    dialog = _find_new_dialog(window, desktop, previous_handles, timeout=10)
+    dialog: Any | None = None
+    detection_errors: list[str] = []
+    for candidate_desktop, handles, timeout_seconds in (
+        (desktop, previous_handles, 3),
+        (win32_desktop, previous_win32_handles, 10),
+    ):
+        try:
+            dialog = _find_new_dialog(
+                window,
+                candidate_desktop,
+                handles,
+                timeout=timeout_seconds,
+            )
+            break
+        except Exception as error:
+            detection_errors.append(str(error))
+    if dialog is None:
+        diagnostics = output.parent / "packer-save-as-controls.txt"
+        lines = ["No new Save As window detected.", *detection_errors, "", "Visible windows:"]
+        try:
+            for candidate in win32_desktop.windows():
+                lines.append(
+                    f"handle={getattr(candidate, 'handle', '')} "
+                    f"class={candidate.class_name()!r} "
+                    f"title={candidate.window_text()!r}"
+                )
+        except Exception as error:
+            lines.append(f"Unable to enumerate windows: {error}")
+        diagnostics.write_text("\n".join(lines), encoding="utf-8")
+        raise PackerAutomationError(
+            "点击保存后既没有更新 LIST.LST/OUTPUT.LST，也没有识别到另存为窗口；"
+            f"诊断信息：{diagnostics}"
+        )
+
     filename = _find_filename_edit(dialog, allow_generic_edit=True)
     if filename is None:
         diagnostics = output.parent / "packer-save-as-controls.txt"
@@ -337,6 +378,20 @@ def _wait_for_package(
     raise PackerAutomationError(
         f"{timeout:g} 秒内没有生成或更新 {output}"
     )
+
+
+def _promote_updated_legacy_list(
+    output: Path,
+    previous_legacy_signature: tuple[int, int] | None,
+) -> bool:
+    legacy_output = output.with_name("LIST.LST")
+    if legacy_output == output:
+        return False
+    current = _signature(legacy_output)
+    if current is None or current == previous_legacy_signature:
+        return False
+    shutil.copy2(legacy_output, output)
+    return _signature(output) is not None
 
 
 def automate_packer(

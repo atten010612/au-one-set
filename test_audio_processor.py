@@ -908,6 +908,19 @@ class AudioProcessorTests(unittest.TestCase):
             output.write_bytes(b"new package")
             packer_automation._wait_for_package(output, previous, timeout=0.1)
 
+    def test_packer_promotes_updated_fixed_list_to_output_lst(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "LIST.LST"
+            output = root / "OUTPUT.LST"
+            legacy.write_bytes(b"old")
+            previous = packer_automation._signature(legacy)
+            legacy.write_bytes(b"new package")
+            self.assertTrue(
+                packer_automation._promote_updated_legacy_list(output, previous)
+            )
+            self.assertEqual(output.read_bytes(), b"new package")
+
 
 if __name__ == "__main__":
     unittest.main()
