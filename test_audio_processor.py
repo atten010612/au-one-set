@@ -52,20 +52,37 @@ class AudioProcessorTests(unittest.TestCase):
                 [expected],
             )
 
-    def test_preprocessing_filter_preserves_middle_silence_strategy(self) -> None:
+    def test_denoise_filter_uses_configured_reduction(self) -> None:
         args = argparse.Namespace(
             noise_reduction=12.0,
             noise_floor=-50.0,
-            speech_confirmation=0.02,
-            silence_threshold=-45.0,
-            keep_silence=0.15,
         )
-        value = audio_processor.preprocessing_filter(args, {"denoise", "trim"})
-        self.assertIsNotNone(value)
+        value = audio_processor.denoise_filter(args)
         self.assertIn("afftdn=", value)
-        self.assertEqual(value.count("silenceremove="), 2)
-        self.assertEqual(value.count("areverse"), 2)
-        self.assertNotIn("stop_periods", value)
+        self.assertIn("nr=12", value)
+
+    def test_short_head_silence_is_never_padded(self) -> None:
+        log = (
+            "[silencedetect] silence_start: 0\n"
+            "[silencedetect] silence_end: 0.05 | silence_duration: 0.05\n"
+        )
+        self.assertEqual(
+            audio_processor.edge_trim_bounds(log, 1.05, 0.15),
+            (0.0, 1.05),
+        )
+
+    def test_only_excess_edge_silence_is_trimmed(self) -> None:
+        log = (
+            "[silencedetect] silence_start: 0\n"
+            "[silencedetect] silence_end: 0.3 | silence_duration: 0.3\n"
+            "[silencedetect] silence_start: 0.8\n"
+            "[silencedetect] silence_end: 0.9 | silence_duration: 0.1\n"
+            "[silencedetect] silence_start: 1.7\n"
+            "[silencedetect] silence_end: 2 | silence_duration: 0.3\n"
+        )
+        start, end = audio_processor.edge_trim_bounds(log, 2.0, 0.15)
+        self.assertAlmostEqual(start, 0.15)
+        self.assertAlmostEqual(end, 1.85)
 
     def test_settings_signature_changes_with_completed_steps(self) -> None:
         args = audio_processor.parse_args([])

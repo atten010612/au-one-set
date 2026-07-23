@@ -107,7 +107,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="speech_confirmation",
         type=float,
         default=0.02,
-        help="确认进入人声所需的连续非静音时长（秒）",
+        help="判定头尾静音所需的最短持续时间（秒）",
     )
     parser.add_argument("--keep-silence", type=float, default=0.15, help="头尾保留静音（秒）")
     parser.add_argument("--target-lufs", type=float, default=-16.0, help="目标综合响度（LUFS）")
@@ -127,7 +127,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg", help="ffmpeg.exe 的明确路径")
     parser.add_argument("--ffprobe", help="ffprobe.exe 的明确路径")
     parser.add_argument("--overwrite", action="store_true", help="覆盖同名输出文件")
-    parser.add_argument("--version", action="version", version="audio-processor 1.0.0")
+    parser.add_argument("--version", action="version", version="audio-processor 1.1.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -395,6 +395,7 @@ def settings_signature(
     args: argparse.Namespace, completed_steps: Iterable[str] = ()
 ) -> str:
     settings = {
+        "processing_algorithm": 2,
         "denoise": not args.no_denoise,
         "trim": not args.no_trim,
         "normalize": not args.no_normalize,
@@ -413,21 +414,76 @@ def settings_signature(
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
 
-def preprocessing_filter(args: argparse.Namespace, steps: set[str]) -> str | None:
-    filters: list[str] = []
-    if "denoise" in steps:
-        filters.append(
-            f"afftdn=nr={args.noise_reduction:g}:nf={args.noise_floor:g}:tn=1"
-        )
-    if "trim" in steps:
-        trim = (
-            "silenceremove="
-            f"start_periods=1:start_duration={args.speech_confirmation:g}:"
-            f"start_threshold={args.silence_threshold:g}dB:"
-            f"start_silence={args.keep_silence:g}:detection=rms:window=0.02"
-        )
-        filters.extend([trim, "areverse", trim, "areverse"])
-    return ",".join(filters) or None
+def denoise_filter(args: argparse.Namespace) -> str:
+    return f"afftdn=nr={args.noise_reduction:g}:nf={args.noise_floor:g}:tn=1"
+
+
+def edge_trim_bounds(
+    silence_log: str,
+    duration: float,
+    keep_silence: float,
+) -> tuple[float, float]:
+    """Return trim bounds without ever adding silence at either edge."""
+    starts = [
+        float(value)
+        for value in re.findall(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)", silence_log)
+    ]
+    ends = [
+        float(value)
+        for value in re.findall(r"silence_end:\s*([0-9]+(?:\.[0-9]+)?)", silence_log)
+    ]
+    tolerance = max(0.01, duration / 100_000)
+    leading_silence = 0.0
+    trailing_silence = 0.0
+    if starts and ends and starts[0] <= tolerance:
+        leading_silence = min(ends[0], duration)
+    if starts and ends and ends[-1] >= duration - tolerance:
+        trailing_silence = max(0.0, duration - starts[-1])
+
+    # Keep min(original edge silence, configured maximum). In particular, an
+    # input with 50 ms of head silence stays at 50 ms when keep_silence=150 ms.
+    trim_start = max(0.0, leading_silence - keep_silence)
+    trim_end = duration - max(0.0, trailing_silence - keep_silence)
+    if trim_end - trim_start < 0.05:
+        raise ProcessingError("检测后没有足够的有效音频；文件可能只有静音")
+    return trim_start, trim_end
+
+
+def detect_edge_trim_filter(
+    source: Path,
+    info: MediaInfo,
+    ffmpeg: str,
+    args: argparse.Namespace,
+) -> str | None:
+    detection_filter = (
+        f"silencedetect=noise={args.silence_threshold:g}dB:"
+        f"d={args.speech_confirmation:g}"
+    )
+    process = run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-nostdin",
+            "-i",
+            str(source),
+            "-af",
+            detection_filter,
+            "-f",
+            "null",
+            "-",
+        ],
+        f"检测 {source.name} 的头尾静音",
+    )
+    trim_start, trim_end = edge_trim_bounds(
+        process.stderr, info.duration, args.keep_silence
+    )
+    tolerance = 1 / max(info.sample_rate, 1)
+    if trim_start <= tolerance and trim_end >= info.duration - tolerance:
+        return None
+    return (
+        f"atrim=start={trim_start:.9f}:end={trim_end:.9f},"
+        "asetpts=PTS-STARTPTS"
+    )
 
 
 def make_lossless_intermediate(
@@ -627,14 +683,35 @@ def process_one(
     applied: list[str] = sorted(steps & {"denoise", "trim"})
 
     with tempfile.TemporaryDirectory(prefix="audio-processor-") as temp_dir:
-        intermediate = Path(temp_dir) / "intermediate.flac"
-        make_lossless_intermediate(
-            source,
-            intermediate,
-            info,
-            ffmpeg,
-            preprocessing_filter(args, steps),
-        )
+        working = source
+        if "denoise" in steps:
+            denoised = Path(temp_dir) / "denoised.flac"
+            make_lossless_intermediate(
+                working,
+                denoised,
+                info,
+                ffmpeg,
+                denoise_filter(args),
+            )
+            working = denoised
+
+        if "trim" in steps:
+            working_info = probe(working, ffprobe)
+            trim_filter = detect_edge_trim_filter(
+                working, working_info, ffmpeg, args
+            )
+            if trim_filter:
+                trimmed = Path(temp_dir) / "trimmed.flac"
+                make_lossless_intermediate(
+                    working,
+                    trimmed,
+                    info,
+                    ffmpeg,
+                    trim_filter,
+                )
+                working = trimmed
+
+        intermediate = working
         intermediate_info = probe(intermediate, ffprobe)
         if intermediate_info.duration < 0.05:
             raise ProcessingError("裁剪后没有有效音频；请调低静音阈值或检查源文件")
@@ -719,7 +796,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.0.0",
+            "version": "1.1.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
