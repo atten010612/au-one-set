@@ -150,7 +150,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="完成音频处理后不启动专用转换工具",
     )
-    parser.add_argument("--version", action="version", version="audio-processor 1.4.0")
+    parser.add_argument(
+        "--workflow-step",
+        choices=("0", "1", "2", "3", "4"),
+        help="流程模式：0全部，1仅处理，2转换并合成，3仅转换，4仅合成",
+    )
+    parser.add_argument("--version", action="version", version="audio-processor 1.5.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -164,6 +169,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ):
         parser.error("静音时长不能为负数")
     return args
+
+
+def choose_workflow_step(explicit: str | None) -> str:
+    if explicit is not None:
+        return explicit
+    if not sys.stdin.isatty():
+        return "0"
+    print(
+        "\n请选择本次执行步骤：\n"
+        "  0 - 从头开始：音频处理 → 转换 → 合成\n"
+        "  1 - 只做音频处理\n"
+        "  2 - 从转换开始：转换 → 合成\n"
+        "  3 - 只做转换\n"
+        "  4 - 只做合成\n",
+        flush=True,
+    )
+    while True:
+        answer = input("请输入 0、1、2、3 或 4 [默认 0]：").strip() or "0"
+        if answer in {"0", "1", "2", "3", "4"}:
+            return answer
+        print("输入无效，请输入 0 到 4。", flush=True)
 
 
 def executable_candidates(name: str) -> Iterable[Path]:
@@ -377,6 +403,79 @@ def collect_files(
 
 def should_scan_recursively(inputs: Sequence[str], recursive_flag: bool) -> bool:
     return recursive_flag or not inputs
+
+
+def collect_existing_audio_for_conversion(inputs: Sequence[str]) -> list[Path]:
+    raw_inputs = list(inputs) or [str(Path.cwd())]
+    collected: list[Path] = []
+    seen: set[str] = set()
+
+    def add_candidates(candidates: Iterable[Path]) -> None:
+        for candidate in candidates:
+            if (
+                not candidate.is_file()
+                or candidate.suffix.lower() not in SUPPORTED_EXTENSIONS
+                or "converted" in {part.casefold() for part in candidate.parts}
+            ):
+                continue
+            resolved = candidate.resolve()
+            key = str(resolved).casefold()
+            if key not in seen:
+                seen.add(key)
+                collected.append(resolved)
+
+    for raw in raw_inputs:
+        source = Path(raw).expanduser().resolve()
+        if not source.exists():
+            log(f"[跳过] 路径不存在：{source}")
+            continue
+        if source.is_file():
+            add_candidates([source])
+            continue
+
+        processed_directories = (
+            [source]
+            if source.name.casefold() == "processed"
+            else [
+                directory
+                for directory in source.rglob("*")
+                if directory.is_dir() and directory.name.casefold() == "processed"
+            ]
+        )
+        if processed_directories:
+            for directory in processed_directories:
+                add_candidates(directory.rglob("*"))
+        else:
+            add_candidates(source.rglob("*"))
+    return sorted(collected, key=lambda item: str(item).casefold())
+
+
+def existing_converted_directory(
+    inputs: Sequence[str],
+    script_directory: Path,
+    folder_name: str,
+) -> Path:
+    raw_inputs = list(inputs)
+    if not raw_inputs:
+        candidate = Path.cwd() / folder_name
+    elif len(raw_inputs) == 1 and Path(raw_inputs[0]).expanduser().is_dir():
+        supplied = Path(raw_inputs[0]).expanduser().resolve()
+        candidate = (
+            supplied
+            if supplied.name.casefold() == folder_name.casefold()
+            else (
+                supplied.parent / folder_name
+                if supplied.name.casefold() == "processed"
+                else supplied / folder_name
+            )
+        )
+    else:
+        candidate = script_directory.resolve() / folder_name
+    if not candidate.is_dir():
+        raise ProcessingError(f"找不到合成输入目录：{candidate}")
+    if not any(path.is_file() for path in candidate.iterdir()):
+        raise ProcessingError(f"合成输入目录为空：{candidate}")
+    return candidate.resolve()
 
 
 def output_directory(source: Path, explicit_output: Path | None) -> Path:
@@ -876,7 +975,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.4.0",
+            "version": "1.5.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
@@ -897,15 +996,12 @@ def write_reports(
 def run_converter_after_processing(
     args: argparse.Namespace,
     results: Sequence[Result],
+    include_packer: bool | None = None,
 ) -> bool:
     if args.no_converter:
         return True
     script_directory = Path(__file__).resolve().parent
-    config_path = (
-        Path(args.converter_config).expanduser().resolve()
-        if args.converter_config
-        else script_directory / "audio_processor_config.json"
-    )
+    config_path = converter_config_path(args, script_directory)
     if not config_path.is_file() and not args.converter_config:
         return True
     try:
@@ -933,6 +1029,7 @@ def run_converter_after_processing(
             args.inputs,
             script_directory,
             config_path,
+            include_packer=include_packer,
         )
         if converted_directory:
             log(
@@ -945,8 +1042,98 @@ def run_converter_after_processing(
         return False
 
 
+def converter_config_path(
+    args: argparse.Namespace,
+    script_directory: Path | None = None,
+) -> Path:
+    base = script_directory or Path(__file__).resolve().parent
+    return (
+        Path(args.converter_config).expanduser().resolve()
+        if args.converter_config
+        else base / "audio_processor_config.json"
+    )
+
+
+def run_conversion_from_existing_audio(
+    args: argparse.Namespace,
+    include_packer: bool,
+) -> int:
+    files = collect_existing_audio_for_conversion(args.inputs)
+    if not files:
+        log("没有找到可用于转换的现有音频文件。")
+        return 1
+    log(f"找到 {len(files)} 个现有音频文件，跳过音频处理。")
+    results = [
+        Result(
+            source=str(path),
+            source_sha256="",
+            output=str(path),
+            status="skipped",
+            message="作为现有文件直接转换",
+            settings_signature="existing-input",
+            completed_steps_before=sorted(ALL_STEPS),
+            applied_steps=[],
+        )
+        for path in files
+    ]
+    no_converter = args.no_converter
+    args.no_converter = False
+    try:
+        succeeded = run_converter_after_processing(
+            args,
+            results,
+            include_packer=include_packer,
+        )
+    finally:
+        args.no_converter = no_converter
+    return 0 if succeeded else 3
+
+
+def run_packer_from_existing_conversion(args: argparse.Namespace) -> int:
+    script_directory = Path(__file__).resolve().parent
+    config_path = converter_config_path(args, script_directory)
+    try:
+        from converter_automation import (
+            ensure_pywinauto,
+            load_converter_config,
+        )
+        from packer_automation import run_configured_packer
+
+        config = load_converter_config(config_path)
+        source = existing_converted_directory(
+            args.inputs,
+            script_directory,
+            config.output_folder_name,
+        )
+        ensure_pywinauto(config.auto_install_pywinauto)
+        config.packer_enabled = True
+        package = run_configured_packer(source, config, config_path)
+        if package:
+            log(f"[合成] 已完成并校验：{package}")
+        return 0
+    except Exception as error:
+        log(f"[合成失败] {error}")
+        return 3
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    workflow_step = choose_workflow_step(args.workflow_step)
+    workflow_names = {
+        "0": "音频处理 → 转换 → 合成",
+        "1": "仅音频处理",
+        "2": "转换 → 合成",
+        "3": "仅转换",
+        "4": "仅合成",
+    }
+    log(f"本次模式：{workflow_step} - {workflow_names[workflow_step]}")
+    if workflow_step == "2":
+        return run_conversion_from_existing_audio(args, include_packer=True)
+    if workflow_step == "3":
+        return run_conversion_from_existing_audio(args, include_packer=False)
+    if workflow_step == "4":
+        return run_packer_from_existing_conversion(args)
+
     ffmpeg, ffprobe = resolve_ffmpeg(args)
     explicit_output = Path(args.output).expanduser().resolve() if args.output else None
     plan_path = args.completed_plan
@@ -1032,9 +1219,15 @@ def main(argv: list[str] | None = None) -> int:
         f"完成 {counts['processed']}，原样复制 {counts['copied']}，"
         f"跳过 {counts['skipped']}，失败 {counts['failed']}。"
     )
-    converter_ok = run_converter_after_processing(args, results)
     if counts["failed"]:
         return 2
+    if workflow_step == "1":
+        return 0
+    converter_ok = run_converter_after_processing(
+        args,
+        results,
+        include_packer=True,
+    )
     return 0 if converter_ok else 3
 
 

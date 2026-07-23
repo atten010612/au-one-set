@@ -66,6 +66,78 @@ class AudioProcessorTests(unittest.TestCase):
             audio_processor.should_scan_recursively(["voice-folder"], True)
         )
 
+    def test_workflow_modes_skip_ffmpeg_for_existing_conversion_steps(self) -> None:
+        for mode, helper, expected in (
+            ("2", "run_conversion_from_existing_audio", True),
+            ("3", "run_conversion_from_existing_audio", False),
+            ("4", "run_packer_from_existing_conversion", None),
+        ):
+            with (
+                mock.patch.object(
+                    audio_processor,
+                    "resolve_ffmpeg",
+                    side_effect=AssertionError("FFmpeg must not be checked"),
+                ),
+                mock.patch.object(
+                    audio_processor,
+                    helper,
+                    return_value=0,
+                ) as run_step,
+            ):
+                self.assertEqual(
+                    audio_processor.main(["--workflow-step", mode]),
+                    0,
+                )
+            if expected is not None:
+                self.assertEqual(run_step.call_args.kwargs["include_packer"], expected)
+
+    def test_workflow_defaults_to_all_when_noninteractive(self) -> None:
+        with mock.patch.object(audio_processor.sys.stdin, "isatty", return_value=False):
+            self.assertEqual(audio_processor.choose_workflow_step(None), "0")
+        self.assertEqual(audio_processor.choose_workflow_step("4"), "4")
+
+    def test_existing_conversion_prefers_processed_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.wav"
+            raw.touch()
+            processed = root / "processed"
+            processed.mkdir()
+            ready = processed / "ready.wav"
+            ready.touch()
+            converted = root / "converted"
+            converted.mkdir()
+            (converted / "old.wav").touch()
+            self.assertEqual(
+                audio_processor.collect_existing_audio_for_conversion([str(root)]),
+                [ready],
+            )
+
+    def test_only_synthesis_accepts_converted_or_processed_input_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            processed = root / "processed"
+            processed.mkdir()
+            converted = root / "converted"
+            converted.mkdir()
+            (converted / "voice.f1a").touch()
+            self.assertEqual(
+                audio_processor.existing_converted_directory(
+                    [str(converted)],
+                    root,
+                    "converted",
+                ),
+                converted,
+            )
+            self.assertEqual(
+                audio_processor.existing_converted_directory(
+                    [str(processed)],
+                    root,
+                    "converted",
+                ),
+                converted,
+            )
+
     def test_denoise_filter_uses_configured_reduction(self) -> None:
         args = argparse.Namespace(
             noise_reduction=12.0,
@@ -247,6 +319,13 @@ class AudioProcessorTests(unittest.TestCase):
                 [str(source_file)], script_directory, "converted"
             )
             self.assertEqual(file_output, script_directory / "converted")
+
+            processed = root / "processed"
+            processed.mkdir()
+            processed_output = converter_automation.conversion_output_directory(
+                [str(processed)], script_directory, "converted"
+            )
+            self.assertEqual(processed_output, root / "converted")
 
     def test_converter_file_dialog_text_supports_unicode_paths(self) -> None:
         paths = [Path(r"D:\提示音\开始.wav"), Path(r"D:\提示音\结束.wav")]

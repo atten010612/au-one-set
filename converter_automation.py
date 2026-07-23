@@ -158,7 +158,8 @@ def conversion_output_directory(
     if not raw_inputs:
         base = Path.cwd()
     elif len(raw_inputs) == 1 and Path(raw_inputs[0]).expanduser().is_dir():
-        base = Path(raw_inputs[0]).expanduser().resolve()
+        supplied = Path(raw_inputs[0]).expanduser().resolve()
+        base = supplied.parent if supplied.name.casefold() == "processed" else supplied
     else:
         base = script_directory.resolve()
     output = base / folder_name
@@ -952,6 +953,7 @@ def run_configured_converter(
     raw_inputs: Sequence[str],
     script_directory: Path,
     config_path: Path,
+    include_packer: bool | None = None,
 ) -> Path | None:
     config = load_converter_config(config_path)
     if not config.enabled:
@@ -976,7 +978,10 @@ def run_configured_converter(
         config,
         output,
     )
-    if config.packer_enabled:
+    should_run_packer = (
+        config.packer_enabled if include_packer is None else include_packer
+    )
+    if should_run_packer:
         try:
             from packer_automation import (
                 PackerAutomationError,

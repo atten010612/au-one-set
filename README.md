@@ -53,6 +53,20 @@ winget install -e --id Gyan.FFmpeg --source winget
 每个源文件所在目录的 `processed` 文件夹；程序会忽略已有的
 `processed` 和 `converted` 目录，避免重复处理成品。
 
+启动后首先选择本次流程：
+
+```text
+0 - 音频处理 → 转换 → 合成
+1 - 只做音频处理
+2 - 转换 → 合成
+3 - 只做转换
+4 - 只做合成
+```
+
+模式 2/3 会优先查找现有 `processed` 文件夹；没有 `processed` 时才读取
+指定目录中的音频。模式 4 直接读取 `converted`，不会检查 FFmpeg。
+传入的目录本身是 `processed` 或 `converted` 也能正确识别其同级关系。
+
 音频处理成功后，如果脚本旁存在启用的 `audio_processor_config.json`，
 程序会继续打开“音频文件转换工具 1.2.2”，自动添加刚处理好的文件、
 选择格式/采样率/码率、填写保存目录并点击“开始转换”。
@@ -81,6 +95,16 @@ py -3 audio_processor.py "D:\a.wav" "D:\b.mp3" --output "D:\处理完成"
 
 ```powershell
 py -3 audio_processor.py "D:\提示音" --recursive
+```
+
+无人值守运行时可以跳过询问：
+
+```powershell
+py -3 audio_processor.py --workflow-step 0
+py -3 audio_processor.py "D:\提示音" --workflow-step 1
+py -3 audio_processor.py "D:\提示音\processed" --workflow-step 2
+py -3 audio_processor.py "D:\提示音\processed" --workflow-step 3
+py -3 audio_processor.py "D:\提示音\converted" --workflow-step 4
 ```
 
 ## 文件已经完成部分处理时
