@@ -349,6 +349,11 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 `pRFiles.exe同级目录\OUTPUT.LST`，按回车保存，并自动确认覆盖已有文件。
 只有 `OUTPUT.LST` 实际新建或更新时间发生变化才算合成成功。
 
+文件名查找同时支持新版文件窗口编号 1148、旧式 Win32 `edt1` 编号
+1152，以及 `ComboBoxEx32/ComboBox` 内嵌 Edit。仍无法识别时会在
+`pRFiles.exe` 同级生成 `packer-save-as-controls.txt`，其中只记录
+“另存为”窗口，便于继续适配。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

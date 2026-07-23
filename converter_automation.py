@@ -735,16 +735,20 @@ def _wait_for_conversion_outputs(
     )
 
 
-def _find_filename_edit(dialog: Any) -> Any | None:
+def _find_filename_edit(
+    dialog: Any,
+    allow_generic_edit: bool = False,
+) -> Any | None:
     # Prefer the stable common-dialog automation id. Do not guess among visible
     # Edit controls: in this converter the only UIA-visible edit is the search
     # box, which sends pasted filenames into Windows Search.
-    try:
-        filename = dialog.child_window(auto_id="1148", control_type="Edit")
-        filename.wait("visible enabled", timeout=2)
-        return filename
-    except Exception:
-        pass
+    for auto_id in ("1148", "1152"):
+        try:
+            filename = dialog.child_window(auto_id=auto_id, control_type="Edit")
+            filename.wait("visible enabled", timeout=2)
+            return filename
+        except Exception:
+            pass
 
     # The converter's file dialog hides the filename field from UIA but still
     # exposes the classic Win32 control id 1148. Attach to the same handle with
@@ -762,14 +766,52 @@ def _find_filename_edit(dialog: Any) -> Any | None:
         )
     except Exception:
         pass
+    win32_roots: list[Any] = []
     for handle in dict.fromkeys(handles):
+        win32_dialog = Desktop(backend="win32").window(handle=handle)
+        win32_roots.append(win32_dialog)
+        for control_id in (1148, 1152):
+            try:
+                filename = win32_dialog.child_window(
+                    control_id=control_id,
+                    class_name="Edit",
+                )
+                filename.wait("exists enabled", timeout=1)
+                return filename
+            except Exception:
+                continue
+
+    if allow_generic_edit:
+        # Old Delphi TSaveDialog variants may nest the file-name Edit inside
+        # ComboBoxEx32/ComboBox and expose neither modern automation id. The
+        # filename field is the lowest visible Edit in a standard Save As
+        # dialog; the search field is near the top.
+        generic_edits: list[Any] = []
         try:
-            win32_dialog = Desktop(backend="win32").window(handle=handle)
-            filename = win32_dialog.child_window(control_id=1148, class_name="Edit")
-            filename.wait("exists enabled", timeout=1)
-            return filename
+            generic_edits.extend(
+                control
+                for control in dialog.descendants(control_type="Edit")
+                if control.is_visible() and control.is_enabled()
+            )
         except Exception:
-            continue
+            pass
+        for root in win32_roots:
+            try:
+                generic_edits.extend(
+                    control
+                    for control in root.descendants(class_name="Edit")
+                    if control.is_visible() and control.is_enabled()
+                )
+            except Exception:
+                pass
+        if generic_edits:
+            return max(
+                generic_edits,
+                key=lambda control: (
+                    control.rectangle().top,
+                    control.rectangle().width(),
+                ),
+            )
     return None
 
 

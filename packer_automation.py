@@ -272,9 +272,17 @@ def _complete_save_as(
         time.sleep(0.1)
 
     dialog = _find_new_dialog(window, desktop, previous_handles, timeout=10)
-    filename = _find_filename_edit(dialog)
+    filename = _find_filename_edit(dialog, allow_generic_edit=True)
     if filename is None:
-        raise PackerAutomationError("另存为窗口没有找到“文件名”输入框")
+        diagnostics = output.parent / "packer-save-as-controls.txt"
+        try:
+            dialog.print_control_identifiers(filename=str(diagnostics))
+        except Exception:
+            pass
+        raise PackerAutomationError(
+            "另存为窗口没有找到“文件名”输入框；"
+            f"控件信息：{diagnostics}"
+        )
     try:
         filename.set_edit_text(str(output))
         filename.set_focus()

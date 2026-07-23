@@ -552,6 +552,21 @@ class AudioProcessorTests(unittest.TestCase):
             {"auto_id": "1148", "control_type": "Edit"},
         )
 
+    def test_filename_field_supports_legacy_save_dialog_id_1152(self) -> None:
+        missing = mock.Mock()
+        missing.wait.side_effect = RuntimeError("1148 unavailable")
+        legacy = mock.Mock()
+
+        class Dialog:
+            def child_window(self, **criteria: object) -> mock.Mock:
+                return missing if criteria["auto_id"] == "1148" else legacy
+
+        self.assertIs(
+            converter_automation._find_filename_edit(Dialog()),
+            legacy,
+        )
+        legacy.wait.assert_called_once_with("visible enabled", timeout=2)
+
     def test_file_import_waits_for_table_items_not_dialog_close(self) -> None:
         class Window:
             def __init__(self) -> None:
