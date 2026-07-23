@@ -15,6 +15,7 @@
   "packer_window_title_regex": ".*调整文件顺序.*",
   "packer_output_name": "OUTPUT.LST",
   "packer_timeout_seconds": 30,
+  "packres_input_directory": "D:\\soft\\语音烧录\\杰理音频转换工具\\test_dir",
   "packres_batch_name": "new_packres.bat",
   "packres_output_name": "dir_music",
   "packres_timeout_seconds": 60

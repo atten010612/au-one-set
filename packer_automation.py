@@ -458,6 +458,7 @@ def _promote_updated_legacy_list(
 def stage_converted_files(
     source_directory: Path,
     packer_directory: Path,
+    clean_existing: bool = True,
 ) -> list[Path]:
     source_files = sorted(
         (
@@ -471,6 +472,16 @@ def stage_converted_files(
         raise PackerAutomationError(
             f"{source_directory} 中没有可复制的杰理转换文件"
         )
+    packer_directory.mkdir(parents=True, exist_ok=True)
+    if source_directory.resolve() == packer_directory.resolve():
+        return source_files
+    if clean_existing:
+        for existing in packer_directory.iterdir():
+            if (
+                existing.is_file()
+                and existing.suffix.lower() in PACKED_AUDIO_EXTENSIONS
+            ):
+                existing.unlink()
     staged: list[Path] = []
     for source in source_files:
         destination = packer_directory / source.name
@@ -478,6 +489,23 @@ def stage_converted_files(
             shutil.copy2(source, destination)
         staged.append(destination)
     return staged
+
+
+def resolve_packres_input_directory(
+    executable: Path,
+    configured: str,
+) -> Path:
+    path = Path(configured).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    # Default layout:
+    # 音频转换工具/AD140打包工具/packres/pRFiles.exe
+    # 音频转换工具/test_dir
+    try:
+        suite_root = executable.parent.parents[1]
+    except IndexError:
+        suite_root = executable.parent
+    return (suite_root / path).resolve()
 
 
 def run_packres_batch(
@@ -566,9 +594,13 @@ def automate_packer(
             config.packer_timeout_seconds,
         )
         print(f"[合成] 已生成并校验：{output}", flush=True)
-        staged = stage_converted_files(source_directory, executable.parent)
+        staging_directory = resolve_packres_input_directory(
+            executable,
+            config.packres_input_directory,
+        )
+        staged = stage_converted_files(source_directory, staging_directory)
         print(
-            f"[合成] 已复制 {len(staged)} 个转换文件到 {executable.parent}。",
+            f"[合成] 已复制 {len(staged)} 个转换文件到 {staging_directory}。",
             flush=True,
         )
         print(f"[合成] 执行 {config.packres_batch_name}……", flush=True)

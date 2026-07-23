@@ -303,6 +303,7 @@ class AudioProcessorTests(unittest.TestCase):
             self.assertEqual(config.bit_rate, "32K")
             self.assertTrue(config.packer_enabled)
             self.assertEqual(config.packer_output_name, "OUTPUT.LST")
+            self.assertEqual(config.packres_input_directory, "test_dir")
             self.assertEqual(config.packres_batch_name, "new_packres.bat")
             self.assertEqual(config.packres_output_name, "dir_music")
 
@@ -1027,6 +1028,8 @@ class AudioProcessorTests(unittest.TestCase):
             target = root / "packres"
             source.mkdir()
             target.mkdir()
+            (target / "stale.f1b").write_bytes(b"stale")
+            (target / "keep.txt").write_text("keep", encoding="utf-8")
             expected_names = {"a.f1a", "b.f1b", "c.ump3", "d.a", "e.e"}
             for name in expected_names:
                 (source / name).write_bytes(name.encode())
@@ -1034,6 +1037,18 @@ class AudioProcessorTests(unittest.TestCase):
             staged = packer_automation.stage_converted_files(source, target)
             self.assertEqual({path.name for path in staged}, expected_names)
             self.assertFalse((target / "converter-controls.txt").exists())
+            self.assertFalse((target / "stale.f1b").exists())
+            self.assertTrue((target / "keep.txt").exists())
+
+    def test_relative_packres_input_uses_suite_sibling_test_dir(self) -> None:
+        executable = Path("/suite/AD140打包工具/packres/pRFiles.exe")
+        self.assertEqual(
+            packer_automation.resolve_packres_input_directory(
+                executable,
+                "test_dir",
+            ),
+            Path("/suite/test_dir"),
+        )
 
     def test_packres_batch_requires_updated_dir_music(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

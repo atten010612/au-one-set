@@ -53,6 +53,7 @@ class ConverterConfig:
     packer_window_title_regex: str = r".*调整文件顺序.*"
     packer_output_name: str = "OUTPUT.LST"
     packer_timeout_seconds: int = 30
+    packres_input_directory: str = "test_dir"
     packres_batch_name: str = "new_packres.bat"
     packres_output_name: str = "dir_music"
     packres_timeout_seconds: int = 60
@@ -84,6 +85,8 @@ class ConverterConfig:
             raise ConverterAutomationError("packer_output_name 不能为空")
         if self.packer_timeout_seconds < 1:
             raise ConverterAutomationError("packer_timeout_seconds 必须大于 0")
+        if not self.packres_input_directory.strip():
+            raise ConverterAutomationError("packres_input_directory 不能为空")
         if not self.packres_batch_name.strip():
             raise ConverterAutomationError("packres_batch_name 不能为空")
         if not self.packres_output_name.strip():
