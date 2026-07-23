@@ -247,28 +247,110 @@ def _set_output_directory(window: Any, output_directory: Path) -> None:
     edit.set_edit_text(str(output_directory))
 
 
+def _window_handles(window: Any, desktop: Any) -> set[int]:
+    controls: list[Any] = []
+    try:
+        controls.extend(desktop.windows())
+    except Exception:
+        pass
+    try:
+        controls.extend(window.descendants(control_type="Window"))
+    except Exception:
+        pass
+    return {
+        int(control.handle)
+        for control in controls
+        if getattr(control, "handle", None)
+    }
+
+
+def _find_new_dialog(
+    window: Any,
+    desktop: Any,
+    previous_handles: set[int],
+    timeout: float = 10,
+) -> Any:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        candidates: list[Any] = []
+        try:
+            candidates.extend(desktop.windows())
+        except Exception:
+            pass
+        try:
+            candidates.extend(window.descendants(control_type="Window"))
+        except Exception:
+            pass
+        for candidate in reversed(candidates):
+            handle = getattr(candidate, "handle", None)
+            if (
+                handle
+                and int(handle) not in previous_handles
+                and candidate.is_visible()
+            ):
+                return candidate
+        time.sleep(0.2)
+    raise ConverterAutomationError("点击“添加文件”后没有识别到新文件选择窗口")
+
+
+def _set_windows_clipboard(text: str) -> None:
+    try:
+        import win32clipboard
+
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text, win32clipboard.CF_UNICODETEXT)
+        finally:
+            win32clipboard.CloseClipboard()
+    except Exception as error:
+        raise ConverterAutomationError(f"无法将文件路径写入剪贴板：{error}") from error
+
+
+def _wait_until_hidden(window: Any, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if not window.is_visible():
+                return
+        except Exception:
+            return
+        time.sleep(0.2)
+    raise ConverterAutomationError("提交文件路径后，文件选择窗口没有关闭")
+
+
 def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
+    previous_handles = _window_handles(window, desktop)
     _click_button(window, "添加文件")
-    dialog = desktop.window(title_re=r"^(打开|Open)$")
-    dialog.wait("visible enabled ready", timeout=10)
+    dialog = _find_new_dialog(window, desktop, previous_handles)
+    file_text = file_dialog_text(files)
+    filename: Any | None = None
     try:
         filename = dialog.child_window(auto_id="1148", control_type="Edit")
         filename.wait("visible enabled", timeout=5)
     except Exception:
         edits = _visible_controls(dialog, "Edit")
-        if not edits:
-            raise ConverterAutomationError("文件选择窗口中没有找到“文件名”输入框")
-        filename = edits[-1]
-    filename.set_edit_text(file_dialog_text(files))
-    open_buttons = [
-        button
-        for button in _visible_controls(dialog, "Button")
-        if button.window_text().strip().lower().startswith(("打开", "open"))
-    ]
-    if not open_buttons:
-        raise ConverterAutomationError("文件选择窗口中没有找到“打开”按钮")
-    open_buttons[0].click_input()
-    dialog.wait_not("visible", timeout=30)
+        if edits:
+            filename = edits[-1]
+
+    if filename is not None:
+        filename.set_edit_text(file_text)
+        filename.set_focus()
+    else:
+        # Some versions expose the common file dialog as custom/shell panes
+        # only. Alt+N focuses its standard 文件名(N) field; clipboard paste
+        # preserves Chinese paths that pywinauto.type_keys cannot type.
+        from pywinauto.keyboard import send_keys
+
+        dialog.set_focus()
+        _set_windows_clipboard(file_text)
+        send_keys("%n")
+        send_keys("^a^v")
+
+    from pywinauto.keyboard import send_keys
+
+    send_keys("{ENTER}")
+    _wait_until_hidden(dialog)
 
 
 def automate_converter(

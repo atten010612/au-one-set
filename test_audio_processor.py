@@ -372,6 +372,36 @@ class AudioProcessorTests(unittest.TestCase):
             ):
                 converter_automation.ensure_pywinauto(auto_install=True)
 
+    def test_file_dialog_detection_uses_new_handle_not_window_title(self) -> None:
+        class Window:
+            def __init__(self, handle: int, visible: bool = True) -> None:
+                self.handle = handle
+                self.visible = visible
+
+            def is_visible(self) -> bool:
+                return self.visible
+
+            def descendants(self, control_type: str) -> list["Window"]:
+                return []
+
+        class Desktop:
+            def __init__(self, windows: list[Window]) -> None:
+                self._windows = windows
+
+            def windows(self) -> list[Window]:
+                return self._windows
+
+        main = Window(100)
+        converter_titled_dialog = Window(200)
+        desktop = Desktop([main, converter_titled_dialog])
+        found = converter_automation._find_new_dialog(
+            main,
+            desktop,
+            previous_handles={100},
+            timeout=0.1,
+        )
+        self.assertIs(found, converter_titled_dialog)
+
 
 if __name__ == "__main__":
     unittest.main()
