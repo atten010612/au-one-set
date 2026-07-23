@@ -429,6 +429,34 @@ class AudioProcessorTests(unittest.TestCase):
             {"auto_id": "1148", "control_type": "Edit"},
         )
 
+    def test_file_import_waits_for_table_items_not_dialog_close(self) -> None:
+        class Window:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def descendants(self, control_type: str) -> list[object]:
+                self.calls += 1
+                return [] if self.calls == 1 else [object(), object(), object()]
+
+        window = Window()
+        previous = converter_automation._data_item_count(window)
+        converter_automation._wait_for_added_files(
+            window,
+            previous_item_count=previous,
+            timeout=0.1,
+        )
+
+    def test_button_matching_ignores_converter_newlines(self) -> None:
+        button = mock.Mock()
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = True
+        button.window_text.return_value = "\n开始转换\n"
+        window = mock.Mock()
+        window.child_window.side_effect = RuntimeError("exact title unavailable")
+        window.descendants.return_value = [button]
+        converter_automation._click_button(window, "开始转换")
+        button.click_input.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

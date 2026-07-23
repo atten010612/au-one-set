@@ -16,8 +16,8 @@ from typing import Any, Iterable, Sequence
 
 PYWINAUTO_VERSION = "0.6.9"
 FORMATS = {"A", "E", "F1A", "F1C", "UMP3"}
-SAMPLE_RATES = {"8K", "16K", "32K"}
-BIT_RATES = {"20K", "24K", "32K"}
+SAMPLE_RATES = {"8K", "12K", "16K", "24K", "32K"}
+BIT_RATES = {"8K", "16K", "24K", "32K", "40K", "48K", "56K", "64K"}
 
 
 class ConverterAutomationError(RuntimeError):
@@ -205,9 +205,19 @@ def _visible_controls(window: Any, control_type: str) -> list[Any]:
 
 
 def _click_button(window: Any, title: str) -> None:
-    button = window.child_window(title=title, control_type="Button")
-    button.wait("visible enabled", timeout=10)
-    button.click_input()
+    try:
+        button = window.child_window(title=title, control_type="Button")
+        button.wait("visible enabled", timeout=2)
+        button.click_input()
+        return
+    except Exception:
+        pass
+    normalized_title = "".join(title.split())
+    for button in _visible_controls(window, "Button"):
+        if "".join(button.window_text().split()) == normalized_title:
+            button.click_input()
+            return
+    raise ConverterAutomationError(f"没有找到按钮：{title}")
 
 
 def _select_radio(window: Any, title: str, column: int) -> None:
@@ -319,6 +329,26 @@ def _wait_until_hidden(window: Any, timeout: float = 30) -> None:
     raise ConverterAutomationError("提交文件路径后，文件选择窗口没有关闭")
 
 
+def _data_item_count(window: Any) -> int:
+    try:
+        return len(window.descendants(control_type="DataItem"))
+    except Exception:
+        return 0
+
+
+def _wait_for_added_files(
+    window: Any,
+    previous_item_count: int,
+    timeout: float = 30,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _data_item_count(window) > previous_item_count:
+            return
+        time.sleep(0.2)
+    raise ConverterAutomationError("提交文件路径后，转换文件列表没有增加")
+
+
 def _find_filename_edit(dialog: Any) -> Any | None:
     # Prefer the stable common-dialog automation id. Do not guess among visible
     # Edit controls: in this converter the only UIA-visible edit is the search
@@ -358,6 +388,7 @@ def _find_filename_edit(dialog: Any) -> Any | None:
 
 
 def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
+    previous_item_count = _data_item_count(window)
     previous_handles = _window_handles(window, desktop)
     _click_button(window, "添加文件")
     dialog = _find_new_dialog(window, desktop, previous_handles)
@@ -381,7 +412,11 @@ def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
     from pywinauto.keyboard import send_keys
 
     send_keys("{ENTER}")
-    _wait_until_hidden(dialog)
+    # This converter reuses its own title/handle hierarchy for the common file
+    # dialog, so waiting for the selected wrapper to disappear can actually
+    # wait on the still-visible main window. The table row count is the
+    # reliable success signal.
+    _wait_for_added_files(window, previous_item_count)
 
 
 def automate_converter(
