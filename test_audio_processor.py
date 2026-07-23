@@ -67,7 +67,7 @@ class AudioProcessorTests(unittest.TestCase):
             "[silencedetect] silence_end: 0.05 | silence_duration: 0.05\n"
         )
         self.assertEqual(
-            audio_processor.edge_trim_bounds(log, 1.05, 0.15),
+            audio_processor.edge_trim_bounds(log, 1.05, 0.15, 0.0),
             (0.0, 1.05),
         )
 
@@ -80,9 +80,26 @@ class AudioProcessorTests(unittest.TestCase):
             "[silencedetect] silence_start: 1.7\n"
             "[silencedetect] silence_end: 2 | silence_duration: 0.3\n"
         )
-        start, end = audio_processor.edge_trim_bounds(log, 2.0, 0.15)
+        start, end = audio_processor.edge_trim_bounds(log, 2.0, 0.15, 0.0)
         self.assertAlmostEqual(start, 0.15)
-        self.assertAlmostEqual(end, 1.85)
+        self.assertAlmostEqual(end, 1.7)
+
+    def test_detected_tail_silence_is_removed_by_default(self) -> None:
+        args = audio_processor.parse_args([])
+        self.assertEqual(args.keep_head_silence, 0.15)
+        self.assertEqual(args.keep_tail_silence, 0.0)
+        log = (
+            "[silencedetect] silence_start: 1\n"
+            "[silencedetect] silence_end: 1.05 | silence_duration: 0.05\n"
+        )
+        start, end = audio_processor.edge_trim_bounds(
+            log,
+            1.05,
+            args.keep_head_silence,
+            args.keep_tail_silence,
+        )
+        self.assertEqual(start, 0.0)
+        self.assertAlmostEqual(end, 1.0)
 
     def test_settings_signature_changes_with_completed_steps(self) -> None:
         args = audio_processor.parse_args([])

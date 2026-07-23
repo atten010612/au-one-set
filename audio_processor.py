@@ -109,7 +109,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0.02,
         help="判定头尾静音所需的最短持续时间（秒）",
     )
-    parser.add_argument("--keep-silence", type=float, default=0.15, help="头尾保留静音（秒）")
+    parser.add_argument(
+        "--keep-head-silence",
+        "--keep-silence",
+        dest="keep_head_silence",
+        type=float,
+        default=0.15,
+        help="头部最多保留的静音（秒）；不会补足较短的原有静音",
+    )
+    parser.add_argument(
+        "--keep-tail-silence",
+        type=float,
+        default=0.0,
+        help="结尾最多保留的静音（秒）",
+    )
     parser.add_argument("--target-lufs", type=float, default=-16.0, help="目标综合响度（LUFS）")
     parser.add_argument("--true-peak", type=float, default=-1.5, help="目标真峰值（dBTP）")
     parser.add_argument("--lra", type=float, default=11.0, help="目标响度范围（LU）")
@@ -127,14 +140,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg", help="ffmpeg.exe 的明确路径")
     parser.add_argument("--ffprobe", help="ffprobe.exe 的明确路径")
     parser.add_argument("--overwrite", action="store_true", help="覆盖同名输出文件")
-    parser.add_argument("--version", action="version", version="audio-processor 1.1.0")
+    parser.add_argument("--version", action="version", version="audio-processor 1.2.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
         parser.error("--workers 必须大于等于 1")
     if not -70 <= args.silence_threshold <= -10:
         parser.error("--silence-threshold 应在 -70 到 -10 dBFS 之间")
-    if args.keep_silence < 0 or args.speech_confirmation < 0:
+    if (
+        args.keep_head_silence < 0
+        or args.keep_tail_silence < 0
+        or args.speech_confirmation < 0
+    ):
         parser.error("静音时长不能为负数")
     return args
 
@@ -395,7 +412,7 @@ def settings_signature(
     args: argparse.Namespace, completed_steps: Iterable[str] = ()
 ) -> str:
     settings = {
-        "processing_algorithm": 2,
+        "processing_algorithm": 3,
         "denoise": not args.no_denoise,
         "trim": not args.no_trim,
         "normalize": not args.no_normalize,
@@ -403,7 +420,8 @@ def settings_signature(
         "noise_floor": args.noise_floor,
         "silence_threshold": args.silence_threshold,
         "speech_confirmation": args.speech_confirmation,
-        "keep_silence": args.keep_silence,
+        "keep_head_silence": args.keep_head_silence,
+        "keep_tail_silence": args.keep_tail_silence,
         "target_lufs": args.target_lufs,
         "true_peak": args.true_peak,
         "lra": args.lra,
@@ -421,7 +439,8 @@ def denoise_filter(args: argparse.Namespace) -> str:
 def edge_trim_bounds(
     silence_log: str,
     duration: float,
-    keep_silence: float,
+    keep_head_silence: float,
+    keep_tail_silence: float,
 ) -> tuple[float, float]:
     """Return trim bounds without ever adding silence at either edge."""
     starts = [
@@ -441,9 +460,10 @@ def edge_trim_bounds(
         trailing_silence = max(0.0, duration - starts[-1])
 
     # Keep min(original edge silence, configured maximum). In particular, an
-    # input with 50 ms of head silence stays at 50 ms when keep_silence=150 ms.
-    trim_start = max(0.0, leading_silence - keep_silence)
-    trim_end = duration - max(0.0, trailing_silence - keep_silence)
+    # input with 50 ms of head silence stays at 50 ms when the head maximum is
+    # 150 ms. The tail defaults to zero so detected trailing silence is removed.
+    trim_start = max(0.0, leading_silence - keep_head_silence)
+    trim_end = duration - max(0.0, trailing_silence - keep_tail_silence)
     if trim_end - trim_start < 0.05:
         raise ProcessingError("检测后没有足够的有效音频；文件可能只有静音")
     return trim_start, trim_end
@@ -475,7 +495,10 @@ def detect_edge_trim_filter(
         f"检测 {source.name} 的头尾静音",
     )
     trim_start, trim_end = edge_trim_bounds(
-        process.stderr, info.duration, args.keep_silence
+        process.stderr,
+        info.duration,
+        args.keep_head_silence,
+        args.keep_tail_silence,
     )
     tolerance = 1 / max(info.sample_rate, 1)
     if trim_start <= tolerance and trim_end >= info.duration - tolerance:
@@ -796,7 +819,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.1.0",
+            "version": "1.2.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
