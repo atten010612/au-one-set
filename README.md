@@ -305,6 +305,11 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 消息操作，不需要另外安装 32 位 Python。工具已经停留在目标
 `converted` 时会直接跳过磁盘和目录导航。
 
+“保存”按钮会打开模态“另存为”窗口。脚本使用异步 `BM_CLICK`，避免
+同步按钮消息卡死；随后在文件名框填写
+`pRFiles.exe同级目录\OUTPUT.LST`，按回车保存，并自动确认覆盖已有文件。
+只有 `OUTPUT.LST` 实际新建或更新时间发生变化才算合成成功。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

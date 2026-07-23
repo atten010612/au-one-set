@@ -698,7 +698,16 @@ class AudioProcessorTests(unittest.TestCase):
         window = mock.Mock()
         window.descendants.return_value = [save]
         packer_automation._click_save(window)
-        save.send_message.assert_called_once_with(0x00F5)
+        save.post_message.assert_called_once_with(0x00F5)
+        save.send_message.assert_not_called()
+
+    def test_packer_overwrite_confirmation_is_clicked(self) -> None:
+        yes = mock.Mock()
+        yes.window_text.return_value = "是(Y)"
+        dialog = mock.Mock()
+        dialog.descendants.return_value = [yes]
+        self.assertTrue(packer_automation._click_overwrite_confirmation(dialog))
+        yes.click.assert_called_once_with()
 
     def test_packer_success_requires_updated_output_lst(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

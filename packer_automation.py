@@ -221,11 +221,90 @@ def _click_save(window: Any) -> None:
             pass
     for button in buttons:
         if "".join(button.window_text().split()) == "保存":
-            # Delphi TBitBtn is a generic HWND wrapper. BM_CLICK avoids DPI
-            # coordinates and works across 32/64-bit process boundaries.
-            button.send_message(0x00F5)
+            # Delphi's save handler opens a modal Save As dialog. A synchronous
+            # BM_CLICK blocks until that dialog closes, preventing automation
+            # from filling it. Post the message asynchronously instead.
+            button.post_message(0x00F5)
             return
     raise PackerAutomationError("没有找到“保存”按钮")
+
+
+def _click_overwrite_confirmation(dialog: Any) -> bool:
+    preferred = ("是", "yes", "覆盖", "确认", "确定", "ok")
+    try:
+        buttons = dialog.descendants(control_type="Button")
+    except Exception:
+        buttons = []
+    for expected in preferred:
+        for button in buttons:
+            title = "".join(button.window_text().split()).casefold()
+            if title.startswith(expected.casefold()) or expected.casefold() in title:
+                button.click()
+                return True
+    return False
+
+
+def _complete_save_as(
+    window: Any,
+    output: Path,
+    previous_signature: tuple[int, int] | None,
+    timeout: float,
+) -> None:
+    from pywinauto import Desktop
+    from converter_automation import (
+        _find_filename_edit,
+        _find_new_dialog,
+        _new_visible_windows,
+        _send_keys,
+        _set_windows_clipboard,
+        _window_handles,
+    )
+
+    desktop = Desktop(backend="uia")
+    previous_handles = _window_handles(window, desktop)
+    _click_save(window)
+
+    # Some builds save immediately; most open the standard Save As dialog.
+    immediate_deadline = time.monotonic() + 1
+    while time.monotonic() < immediate_deadline:
+        if _signature(output) not in {None, previous_signature}:
+            return
+        time.sleep(0.1)
+
+    dialog = _find_new_dialog(window, desktop, previous_handles, timeout=10)
+    filename = _find_filename_edit(dialog)
+    if filename is None:
+        raise PackerAutomationError("另存为窗口没有找到“文件名”输入框")
+    try:
+        filename.set_edit_text(str(output))
+        filename.set_focus()
+    except Exception:
+        filename.set_focus()
+        _set_windows_clipboard(str(output))
+        _send_keys("^a")
+        _send_keys("^v")
+
+    handles_before_submit = _window_handles(window, desktop)
+    _send_keys("{ENTER}")
+    deadline = time.monotonic() + timeout
+    overwrite_confirmed = False
+    while time.monotonic() < deadline:
+        current = _signature(output)
+        if current is not None and current != previous_signature:
+            return
+        if not overwrite_confirmed:
+            for candidate in _new_visible_windows(
+                window,
+                desktop,
+                handles_before_submit,
+            ):
+                if _click_overwrite_confirmation(candidate):
+                    overwrite_confirmed = True
+                    break
+        time.sleep(0.2)
+    raise PackerAutomationError(
+        f"{timeout:g} 秒内未通过另存为生成或更新 {output}"
+    )
 
 
 def _signature(path: Path) -> tuple[int, int] | None:
@@ -286,9 +365,9 @@ def automate_packer(
                 navigate_tree_to_directory(tree, source_directory)
         time.sleep(0.5)
         print("[合成] 点击保存……", flush=True)
-        _click_save(window)
-        print(f"[合成] 等待 {config.packer_output_name}……", flush=True)
-        _wait_for_package(
+        print(f"[合成] 在另存为窗口填写 {config.packer_output_name}……", flush=True)
+        _complete_save_as(
+            window,
             output,
             previous_signature,
             config.packer_timeout_seconds,
