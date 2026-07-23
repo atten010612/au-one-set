@@ -291,6 +291,39 @@ class AudioProcessorTests(unittest.TestCase):
         converter_automation._select_radio(window, "32K", column=2)
         self.assertTrue(bitrate_32k.clicked)
 
+    def test_successful_audio_outputs_are_forwarded_to_converter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.wav"
+            output = root / "processed.wav"
+            config = root / "converter.json"
+            source.touch()
+            output.touch()
+            config.write_text("{}", encoding="utf-8")
+            args = audio_processor.parse_args(
+                [str(source), "--converter-config", str(config)]
+            )
+            result = audio_processor.Result(
+                source=str(source),
+                source_sha256="hash",
+                output=str(output),
+                status="processed",
+                message="ok",
+                settings_signature="settings",
+                completed_steps_before=[],
+                applied_steps=["denoise", "trim", "normalize"],
+            )
+            with mock.patch.object(
+                converter_automation,
+                "run_configured_converter",
+                return_value=root / "converted",
+            ) as run_converter:
+                self.assertTrue(
+                    audio_processor.run_converter_after_processing(args, [result])
+                )
+            forwarded_files = run_converter.call_args.args[0]
+            self.assertEqual(forwarded_files, [output.resolve()])
+
 
 if __name__ == "__main__":
     unittest.main()
