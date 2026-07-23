@@ -101,6 +101,21 @@ class AudioProcessorTests(unittest.TestCase):
         self.assertEqual(start, 0.0)
         self.assertAlmostEqual(end, 1.0)
 
+    def test_denoiser_head_latency_is_removed(self) -> None:
+        processed_log = (
+            "[silencedetect] silence_start: 0\n"
+            "[silencedetect] silence_end: 0.075 | silence_duration: 0.075\n"
+        )
+        start, end = audio_processor.edge_trim_bounds(
+            processed_log,
+            1.075,
+            keep_head_silence=0.15,
+            keep_tail_silence=0.0,
+            original_leading_silence=0.05,
+        )
+        self.assertAlmostEqual(start, 0.025)
+        self.assertAlmostEqual(end, 1.075)
+
     def test_settings_signature_changes_with_completed_steps(self) -> None:
         args = audio_processor.parse_args([])
         untreated = audio_processor.settings_signature(args, set())

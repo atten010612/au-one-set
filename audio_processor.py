@@ -140,7 +140,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg", help="ffmpeg.exe 的明确路径")
     parser.add_argument("--ffprobe", help="ffprobe.exe 的明确路径")
     parser.add_argument("--overwrite", action="store_true", help="覆盖同名输出文件")
-    parser.add_argument("--version", action="version", version="audio-processor 1.2.0")
+    parser.add_argument("--version", action="version", version="audio-processor 1.3.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -412,7 +412,7 @@ def settings_signature(
     args: argparse.Namespace, completed_steps: Iterable[str] = ()
 ) -> str:
     settings = {
-        "processing_algorithm": 3,
+        "processing_algorithm": 4,
         "denoise": not args.no_denoise,
         "trim": not args.no_trim,
         "normalize": not args.no_normalize,
@@ -441,8 +441,34 @@ def edge_trim_bounds(
     duration: float,
     keep_head_silence: float,
     keep_tail_silence: float,
+    original_leading_silence: float | None = None,
 ) -> tuple[float, float]:
     """Return trim bounds without ever adding silence at either edge."""
+    leading_silence, trailing_silence = edge_silence_durations(
+        silence_log, duration
+    )
+    desired_head_silence = min(
+        (
+            leading_silence
+            if original_leading_silence is None
+            else original_leading_silence
+        ),
+        keep_head_silence,
+    )
+
+    # Denoising can add filter latency before the first speech sample. Remove
+    # that excess instead of treating it as source head silence.
+    trim_start = max(0.0, leading_silence - desired_head_silence)
+    trim_end = duration - max(0.0, trailing_silence - keep_tail_silence)
+    if trim_end - trim_start < 0.05:
+        raise ProcessingError("检测后没有足够的有效音频；文件可能只有静音")
+    return trim_start, trim_end
+
+
+def edge_silence_durations(
+    silence_log: str,
+    duration: float,
+) -> tuple[float, float]:
     starts = [
         float(value)
         for value in re.findall(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)", silence_log)
@@ -458,23 +484,14 @@ def edge_trim_bounds(
         leading_silence = min(ends[0], duration)
     if starts and ends and ends[-1] >= duration - tolerance:
         trailing_silence = max(0.0, duration - starts[-1])
-
-    # Keep min(original edge silence, configured maximum). In particular, an
-    # input with 50 ms of head silence stays at 50 ms when the head maximum is
-    # 150 ms. The tail defaults to zero so detected trailing silence is removed.
-    trim_start = max(0.0, leading_silence - keep_head_silence)
-    trim_end = duration - max(0.0, trailing_silence - keep_tail_silence)
-    if trim_end - trim_start < 0.05:
-        raise ProcessingError("检测后没有足够的有效音频；文件可能只有静音")
-    return trim_start, trim_end
+    return leading_silence, trailing_silence
 
 
-def detect_edge_trim_filter(
+def detect_silence_log(
     source: Path,
-    info: MediaInfo,
     ffmpeg: str,
     args: argparse.Namespace,
-) -> str | None:
+) -> str:
     detection_filter = (
         f"silencedetect=noise={args.silence_threshold:g}dB:"
         f"d={args.speech_confirmation:g}"
@@ -494,11 +511,25 @@ def detect_edge_trim_filter(
         ],
         f"检测 {source.name} 的头尾静音",
     )
+    return process.stderr
+
+
+def detect_edge_trim_filter(
+    source: Path,
+    info: MediaInfo,
+    ffmpeg: str,
+    args: argparse.Namespace,
+    original_leading_silence: float | None = None,
+    silence_log: str | None = None,
+) -> str | None:
+    if silence_log is None:
+        silence_log = detect_silence_log(source, ffmpeg, args)
     trim_start, trim_end = edge_trim_bounds(
-        process.stderr,
+        silence_log,
         info.duration,
         args.keep_head_silence,
         args.keep_tail_silence,
+        original_leading_silence,
     )
     tolerance = 1 / max(info.sample_rate, 1)
     if trim_start <= tolerance and trim_end >= info.duration - tolerance:
@@ -706,6 +737,14 @@ def process_one(
     applied: list[str] = sorted(steps & {"denoise", "trim"})
 
     with tempfile.TemporaryDirectory(prefix="audio-processor-") as temp_dir:
+        original_silence_log: str | None = None
+        original_leading_silence: float | None = None
+        if "trim" in steps:
+            original_silence_log = detect_silence_log(source, ffmpeg, args)
+            original_leading_silence, _ = edge_silence_durations(
+                original_silence_log, info.duration
+            )
+
         working = source
         if "denoise" in steps:
             denoised = Path(temp_dir) / "denoised.flac"
@@ -721,7 +760,12 @@ def process_one(
         if "trim" in steps:
             working_info = probe(working, ffprobe)
             trim_filter = detect_edge_trim_filter(
-                working, working_info, ffmpeg, args
+                working,
+                working_info,
+                ffmpeg,
+                args,
+                original_leading_silence=original_leading_silence,
+                silence_log=original_silence_log if working == source else None,
             )
             if trim_filter:
                 trimmed = Path(temp_dir) / "trimmed.flac"
@@ -819,7 +863,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.2.0",
+            "version": "1.3.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
