@@ -9,6 +9,7 @@ import site
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -597,6 +598,22 @@ def _file_snapshot(directory: Path) -> dict[str, tuple[int, int]]:
     return snapshot
 
 
+def _matching_output_count(
+    output_directory: Path,
+    expected_inputs: Sequence[Path],
+) -> int:
+    expected = Counter(path.stem.casefold() for path in expected_inputs)
+    available = Counter(
+        path.stem.casefold()
+        for path in output_directory.rglob("*")
+        if path.is_file()
+    )
+    return sum(
+        min(count, available.get(stem, 0))
+        for stem, count in expected.items()
+    )
+
+
 def _new_visible_windows(
     window: Any,
     desktop: Any,
@@ -670,6 +687,14 @@ def _converter_dialog_is_error(message: str) -> bool:
     )
 
 
+def _converter_dialog_is_success(message: str) -> bool:
+    normalized = message.casefold()
+    return any(
+        marker in normalized
+        for marker in ("转换完成", "转换成功", "完成", "成功", "complete", "success")
+    )
+
+
 def _dismiss_converter_dialog(dialog: Any) -> bool:
     try:
         buttons = dialog.descendants(control_type="Button")
@@ -697,11 +722,13 @@ def _wait_for_conversion_outputs(
     previous_handles: set[int],
     expected_count: int,
     timeout: float,
+    expected_inputs: Sequence[Path] = (),
 ) -> int:
     deadline = time.monotonic() + timeout
     last_dialog_message = ""
     last_progress_report = 0.0
     found_count = 0
+    completion_seen = False
     while time.monotonic() < deadline:
         current_files = _file_snapshot(output_directory)
         changed = [
@@ -709,17 +736,30 @@ def _wait_for_conversion_outputs(
             for path, signature in current_files.items()
             if previous_files.get(path) != signature
         ]
-        found_count = len(changed)
-        if len(changed) >= expected_count:
-            return len(changed)
+        changed_count = len(changed)
+        matched_count = (
+            _matching_output_count(output_directory, expected_inputs)
+            if expected_inputs
+            else changed_count
+        )
+        found_count = matched_count
+        if changed_count >= expected_count or (
+            matched_count >= expected_count
+            and (changed_count > 0 or completion_seen)
+        ):
+            return matched_count
         new_windows = _new_visible_windows(window, desktop, previous_handles)
         for candidate in new_windows:
             message = _window_message(candidate)
             if message and _converter_dialog_is_error(message):
                 raise ConverterAutomationError(f"转换工具提示：{message}")
+            if message and _converter_dialog_is_success(message):
+                completion_seen = True
             if message:
                 last_dialog_message = message
             _dismiss_converter_dialog(candidate)
+        if matched_count >= expected_count and completion_seen:
+            return matched_count
         now = time.monotonic()
         if now - last_progress_report >= 10:
             print(
@@ -1034,6 +1074,7 @@ def automate_converter(
                     config.conversion_timeout_seconds,
                     len(files) * 5,
                 ),
+                expected_inputs=files,
             )
         except Exception as error:
             if isinstance(error, ConverterAutomationError):

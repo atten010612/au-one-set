@@ -811,6 +811,32 @@ class AudioProcessorTests(unittest.TestCase):
             )
         self.assertEqual(count, 1)
 
+    def test_existing_matching_outputs_count_with_newly_converted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            inputs = [Path(f"voice-{index:02d}.wav") for index in range(43)]
+            for path in inputs[:17]:
+                (output / f"{path.stem}.f1a").write_bytes(b"existing")
+            previous = converter_automation._file_snapshot(output)
+            for path in inputs[17:]:
+                (output / f"{path.stem}.f1a").write_bytes(b"new")
+            with mock.patch.object(
+                converter_automation,
+                "_new_visible_windows",
+                return_value=[],
+            ):
+                count = converter_automation._wait_for_conversion_outputs(
+                    mock.Mock(),
+                    mock.Mock(),
+                    output,
+                    previous_files=previous,
+                    previous_handles=set(),
+                    expected_count=43,
+                    expected_inputs=inputs,
+                    timeout=0.1,
+                )
+            self.assertEqual(count, 43)
+
     def test_packer_tree_navigation_expands_each_path_component(self) -> None:
         class Item:
             def __init__(self, name: str, children: dict[str, "Item"] | None = None) -> None:
