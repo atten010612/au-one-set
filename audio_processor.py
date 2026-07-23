@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 
 SUPPORTED_EXTENSIONS = {
@@ -140,7 +140,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg", help="ffmpeg.exe 的明确路径")
     parser.add_argument("--ffprobe", help="ffprobe.exe 的明确路径")
     parser.add_argument("--overwrite", action="store_true", help="覆盖同名输出文件")
-    parser.add_argument("--version", action="version", version="audio-processor 1.3.0")
+    parser.add_argument(
+        "--converter-config",
+        metavar="JSON",
+        help="转换工具配置文件；默认读取脚本旁的 audio_processor_config.json",
+    )
+    parser.add_argument(
+        "--no-converter",
+        action="store_true",
+        help="完成音频处理后不启动专用转换工具",
+    )
+    parser.add_argument("--version", action="version", version="audio-processor 1.4.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -863,7 +873,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.3.0",
+            "version": "1.4.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
@@ -879,6 +889,57 @@ def write_reports(
             encoding="utf-8",
         )
         temporary.replace(directory / REPORT_NAME)
+
+
+def run_converter_after_processing(
+    args: argparse.Namespace,
+    results: Sequence[Result],
+) -> bool:
+    if args.no_converter:
+        return True
+    script_directory = Path(__file__).resolve().parent
+    config_path = (
+        Path(args.converter_config).expanduser().resolve()
+        if args.converter_config
+        else script_directory / "audio_processor_config.json"
+    )
+    if not config_path.is_file() and not args.converter_config:
+        return True
+    try:
+        from converter_automation import (
+            ConverterAutomationError,
+            run_configured_converter,
+        )
+    except ImportError as error:
+        log(f"[转换失败] 无法加载转换自动化模块：{error}")
+        return False
+
+    try:
+        seen: set[str] = set()
+        outputs: list[Path] = []
+        for result in results:
+            if result.status not in {"processed", "copied", "skipped"} or not result.output:
+                continue
+            path = Path(result.output).resolve()
+            key = str(path).casefold()
+            if path.is_file() and key not in seen:
+                seen.add(key)
+                outputs.append(path)
+        converted_directory = run_configured_converter(
+            outputs,
+            args.inputs,
+            script_directory,
+            config_path,
+        )
+        if converted_directory:
+            log(
+                "[转换] 已添加 "
+                f"{len(outputs)} 个文件并点击“开始转换”；保存目录：{converted_directory}"
+            )
+        return True
+    except (OSError, ValueError, ConverterAutomationError) as error:
+        log(f"[转换失败] {error}")
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -961,7 +1022,10 @@ def main(argv: list[str] | None = None) -> int:
         f"完成 {counts['processed']}，原样复制 {counts['copied']}，"
         f"跳过 {counts['skipped']}，失败 {counts['failed']}。"
     )
-    return 2 if counts["failed"] else 0
+    converter_ok = run_converter_after_processing(args, results)
+    if counts["failed"]:
+        return 2
+    return 0 if converter_ok else 3
 
 
 if __name__ == "__main__":

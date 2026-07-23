@@ -8,7 +8,9 @@
 4. 保留扩展名、采样率、声道数，并尽量保留原码率；
 5. 不修改源文件，结果写入 `processed` 文件夹。
 
-支持 WAV、MP3、M4A、AAC、FLAC、OGG、OPUS 和 WMA。脚本只使用 Python 标准库，不需要安装 Python 第三方包。
+支持 WAV、MP3、M4A、AAC、FLAC、OGG、OPUS 和 WMA。基础音频处理只使用
+Python 标准库；启用专用转换工具自动操作时，脚本会安装
+`pywinauto 0.6.9`。
 
 ## Windows 快速使用
 
@@ -47,6 +49,10 @@ winget install -e --id Gyan.FFmpeg --source winget
 - 多个文件和文件夹的组合。
 
 双击 `处理音频.bat` 则扫描工具所在文件夹。处理结果位于每个源文件所在目录的 `processed` 文件夹。
+
+音频处理成功后，如果脚本旁存在启用的 `audio_processor_config.json`，
+程序会继续打开“音频文件转换工具 1.2.2”，自动添加刚处理好的文件、
+选择格式/采样率/码率、填写保存目录并点击“开始转换”。
 
 ### 命令行处理
 
@@ -182,6 +188,74 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
 
 中间停顿不受头尾规则影响。
 
+## 专用音频转换工具
+
+默认配置文件是脚本旁的 `audio_processor_config.json`：
+
+```json
+{
+  "enabled": true,
+  "converter_path": "D:\\soft\\语音烧录\\杰理音频转换工具\\AD140音频转换工具\\media_convert_tools\\convert_to_.f1a.f1b.ump3.a.b.e\\音频文件转换工具_1.2.2.exe",
+  "format": "F1A",
+  "sample_rate": "32K",
+  "bit_rate": "32K",
+  "output_folder_name": "converted",
+  "auto_install_pywinauto": true,
+  "clear_existing_files": true,
+  "window_title_regex": ".*音频文件转换工具.*",
+  "startup_timeout_seconds": 20
+}
+```
+
+默认自动选择截图所示的 `F1A / 32K采样率 / 32K码率`，然后点击
+“开始转换”。可以填写的选项为：
+
+- 格式：`A`、`E`、`F1A`、`F1C`、`UMP3`
+- 采样率：`8K`、`16K`、`32K`
+- 码率：`20K`、`24K`、`32K`
+
+### 换到其他电脑
+
+在新电脑上打开脚本旁的：
+
+```text
+audio_processor_config.json
+```
+
+修改其中的 `converter_path`。JSON 中的 Windows 路径必须使用双反斜杠，
+例如：
+
+```json
+{
+  "converter_path": "C:\\Tools\\音频文件转换工具_1.2.2.exe"
+}
+```
+
+如果保存的路径不存在，运行时会弹出文件选择窗口。选择新电脑上的
+`音频文件转换工具_1.2.2.exe` 后，脚本会自动把新路径写回配置文件。
+
+### 转换保存目录
+
+- 拖入一个文件夹：在该文件夹内建立 `converted`；
+- 拖入单个文件或多个文件：在脚本所在目录建立 `converted`；
+- 双击 BAT 扫描当前目录：在当前目录建立 `converted`。
+
+转换工具的控件结构如果与 1.2.2 版本不同，自动操作会停止，并在
+`converted\converter-controls.txt` 保存识别到的控件信息。它不会使用
+固定屏幕坐标，因此正常情况下不受窗口位置和分辨率影响。
+
+临时不运行转换工具：
+
+```powershell
+py -3 audio_processor.py "D:\提示音" --no-converter
+```
+
+使用另一份配置：
+
+```powershell
+py -3 audio_processor.py "D:\提示音" --converter-config "D:\converter-config.json"
+```
+
 ## 输出和退出代码
 
 处理某个文件失败不会中止其他文件。结束时会显示完成、复制、跳过和失败数量。
@@ -189,5 +263,6 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
 - `0`：全部成功；
 - `1`：没有找到音频文件；
 - `2`：至少一个文件失败。
+- `3`：音频处理成功，但专用转换工具自动操作失败。
 
 MP3、AAC、OGG 等有损格式在处理后必须重新编码，因此无法做到比特级无损。程序使用无损 FLAC 中间文件，最终只进行一次有损编码。

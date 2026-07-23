@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import audio_processor
+import converter_automation
 
 
 class AudioProcessorTests(unittest.TestCase):
@@ -193,6 +194,102 @@ class AudioProcessorTests(unittest.TestCase):
             ),
         ):
             self.assertFalse(audio_processor.install_ffmpeg_with_winget())
+
+    def test_converter_config_and_output_directory_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_path = root / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "enabled": True,
+                        "converter_path": r"D:\tools\converter.exe",
+                        "format": "f1a",
+                        "sample_rate": "32k",
+                        "bit_rate": "32k",
+                        "output_folder_name": "converted",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = converter_automation.load_converter_config(config_path)
+            self.assertEqual(config.format, "F1A")
+            self.assertEqual(config.sample_rate, "32K")
+            self.assertEqual(config.bit_rate, "32K")
+
+            dragged_folder = root / "dragged"
+            dragged_folder.mkdir()
+            folder_output = converter_automation.conversion_output_directory(
+                [str(dragged_folder)], root / "script", "converted"
+            )
+            self.assertEqual(folder_output, dragged_folder / "converted")
+
+            source_file = root / "voice.wav"
+            source_file.touch()
+            script_directory = root / "script"
+            script_directory.mkdir()
+            file_output = converter_automation.conversion_output_directory(
+                [str(source_file)], script_directory, "converted"
+            )
+            self.assertEqual(file_output, script_directory / "converted")
+
+    def test_converter_file_dialog_text_supports_unicode_paths(self) -> None:
+        paths = [Path(r"D:\提示音\开始.wav"), Path(r"D:\提示音\结束.wav")]
+        value = converter_automation.file_dialog_text(paths)
+        self.assertIn('"', value)
+        self.assertIn("开始.wav", value)
+        self.assertIn("结束.wav", value)
+
+    def test_converter_selects_duplicate_32k_by_column(self) -> None:
+        class Rectangle:
+            def __init__(self, left: int) -> None:
+                self.left = left
+
+        class Control:
+            def __init__(self, title: str, left: int) -> None:
+                self.title = title
+                self.left = left
+                self.clicked = False
+
+            def is_visible(self) -> bool:
+                return True
+
+            def is_enabled(self) -> bool:
+                return True
+
+            def rectangle(self) -> Rectangle:
+                return Rectangle(self.left)
+
+            def window_text(self) -> str:
+                return self.title
+
+            def click_input(self) -> None:
+                self.clicked = True
+
+        class Window:
+            def __init__(self, controls: list[Control]) -> None:
+                self.controls = controls
+
+            def descendants(self, control_type: str) -> list[Control]:
+                self.asserted_type = control_type
+                return self.controls
+
+        sample_32k = Control("32K", 120)
+        bitrate_32k = Control("32K", 220)
+        window = Window(
+            [
+                Control("F1A", 20),
+                Control("16K", 120),
+                sample_32k,
+                Control("24K", 220),
+                bitrate_32k,
+            ]
+        )
+        converter_automation._select_radio(window, "32K", column=1)
+        self.assertTrue(sample_32k.clicked)
+        self.assertFalse(bitrate_32k.clicked)
+        converter_automation._select_radio(window, "32K", column=2)
+        self.assertTrue(bitrate_32k.clicked)
 
 
 if __name__ == "__main__":
