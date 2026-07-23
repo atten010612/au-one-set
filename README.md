@@ -348,8 +348,10 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 该工具是 32 位 Delphi 程序，可能显示“32-bit application should be
 automated using 32-bit Python”警告；这不是失败。脚本使用其实际控件
 `TDriveComboBox`、`TDirectoryListBox` 和 `TBitBtn`，并通过原生窗口
-消息操作，不需要另外安装 32 位 Python。工具已经停留在目标
-`converted` 时会直接跳过磁盘和目录导航。
+消息操作，不需要另外安装 32 位 Python。左上方显示的绝对路径是
+`OUTPUT.LST` 输出路径，不代表右侧目录列表的当前状态，因此脚本每次
+都会重新导航；选中每一级目录后发送原生 `LBN_DBLCLK` 通知，等价于
+手工双击进入，最后确认左侧源文件列表已经加载。
 
 “保存”按钮会打开模态“另存为”窗口。脚本使用异步 `BM_CLICK`，避免
 同步按钮消息卡死；随后在文件名框填写

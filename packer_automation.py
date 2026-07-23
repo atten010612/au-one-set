@@ -87,31 +87,6 @@ def _select_drive(window: Any, drive: str) -> None:
     raise PackerAutomationError(f"磁盘下拉框中没有找到 {drive}")
 
 
-def _same_path(first: str | Path, second: str | Path) -> bool:
-    return ntpath.normcase(ntpath.normpath(str(first))) == ntpath.normcase(
-        ntpath.normpath(str(second))
-    )
-
-
-def _current_directory(window: Any) -> str | None:
-    candidates: list[str] = []
-    for class_name in ("TPanel", "Static"):
-        try:
-            controls = window.descendants(class_name=class_name)
-        except Exception:
-            continue
-        for control in controls:
-            try:
-                text = control.window_text().strip()
-            except Exception:
-                continue
-            if len(text) >= 3 and text[1:3] == ":\\":
-                candidates.append(text)
-    if not candidates:
-        return None
-    return max(candidates, key=lambda value: (value.count("\\"), len(value)))
-
-
 def _find_directory_list(window: Any) -> Any:
     lists = window.descendants(class_name="TDirectoryListBox")
     if not lists:
@@ -125,10 +100,42 @@ def _matches_directory_component(item_text: str, component: str) -> bool:
     return basename.casefold() == component.casefold()
 
 
+def _activate_directory_selection(directory_list: Any) -> None:
+    handle = getattr(directory_list, "handle", None)
+    if not handle or os.name != "nt":
+        try:
+            directory_list.type_keys("{ENTER}")
+            return
+        except Exception as error:
+            raise PackerAutomationError(f"无法进入选中的目录：{error}") from error
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        user32.GetParent.argtypes = [ctypes.c_void_p]
+        user32.GetParent.restype = ctypes.c_void_p
+        user32.GetDlgCtrlID.argtypes = [ctypes.c_void_p]
+        user32.GetDlgCtrlID.restype = ctypes.c_int
+        user32.SendMessageW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint,
+            ctypes.c_size_t,
+            ctypes.c_void_p,
+        ]
+        user32.SendMessageW.restype = ctypes.c_ssize_t
+        parent = user32.GetParent(int(handle))
+        control_id = user32.GetDlgCtrlID(int(handle))
+        # WM_COMMAND with LBN_DBLCLK reproduces a native double-click without
+        # DPI-sensitive mouse coordinates.
+        wparam = (2 << 16) | (control_id & 0xFFFF)
+        user32.SendMessageW(parent, 0x0111, wparam, int(handle))
+    except Exception as error:
+        raise PackerAutomationError(
+            f"无法向 Delphi 目录列表发送双击通知：{error}"
+        ) from error
+
+
 def navigate_directory_list(window: Any, directory: Path) -> None:
-    current = _current_directory(window)
-    if current and _same_path(current, directory):
-        return
     directory_list = _find_directory_list(window)
     for component in directory.parts[1:]:
         try:
@@ -145,16 +152,35 @@ def navigate_directory_list(window: Any, directory: Path) -> None:
                 f"目录列表中没有找到 {component!r}；可见项：{items}"
             )
         directory_list.select(matches[-1])
+        _activate_directory_selection(directory_list)
         time.sleep(0.2)
-        if _current_directory(window) and _same_path(
-            _current_directory(window) or "", directory
-        ):
-            return
-    current = _current_directory(window)
-    if not current or not _same_path(current, directory):
+    try:
+        selected = directory_list.selected_text()
+    except Exception:
+        selected = directory.name
+    if selected and not _matches_directory_component(selected, directory.name):
         raise PackerAutomationError(
-            f"目录选择后路径不一致：期望 {directory}，当前 {current or '(无法读取)'}"
+            f"目录选择后节点不一致：期望 {directory.name!r}，当前 {selected!r}"
         )
+
+
+def _wait_for_source_files(window: Any, timeout: float = 5) -> int:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        counts: list[int] = []
+        try:
+            lists = window.descendants(class_name="TListBox")
+        except Exception:
+            lists = []
+        for control in lists:
+            try:
+                counts.append(len(control.item_texts()))
+            except Exception:
+                continue
+        if counts and max(counts) > 0:
+            return max(counts)
+        time.sleep(0.2)
+    raise PackerAutomationError("进入 converted 后左侧文件列表仍为空")
 
 
 def _find_tree(window: Any) -> Any:
@@ -413,20 +439,20 @@ def automate_packer(
             "visible enabled ready",
             timeout=config.startup_timeout_seconds,
         )
-        current = _current_directory(window)
-        if current and _same_path(current, source_directory):
-            print(f"[合成] 当前目录已经是 {source_directory}。", flush=True)
+        print(f"[合成] 选择磁盘 {source_directory.drive}……", flush=True)
+        _select_drive(window, source_directory.drive)
+        print(f"[合成] 逐层进入 {source_directory}……", flush=True)
+        try:
+            directory_lists = window.descendants(class_name="TDirectoryListBox")
+        except Exception:
+            directory_lists = []
+        if directory_lists:
+            navigate_directory_list(window, source_directory)
         else:
-            print(f"[合成] 选择磁盘 {source_directory.drive}……", flush=True)
-            _select_drive(window, source_directory.drive)
-            print(f"[合成] 逐层进入 {source_directory}……", flush=True)
-            try:
-                navigate_directory_list(window, source_directory)
-            except PackerAutomationError:
-                # Retain support for variants that use a standard TreeView.
-                tree = _find_tree(window)
-                navigate_tree_to_directory(tree, source_directory)
-        time.sleep(0.5)
+            tree = _find_tree(window)
+            navigate_tree_to_directory(tree, source_directory)
+        loaded_count = _wait_for_source_files(window)
+        print(f"[合成] 已加载 {loaded_count} 条源文件记录。", flush=True)
         print("[合成] 点击保存……", flush=True)
         print(f"[合成] 在另存为窗口填写 {config.packer_output_name}……", flush=True)
         _complete_save_as(

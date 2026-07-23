@@ -945,17 +945,38 @@ class AudioProcessorTests(unittest.TestCase):
         combo.item_texts.assert_not_called()
         combo.select.assert_not_called()
 
-    def test_packer_reads_delphi_current_directory_panel(self) -> None:
-        path_panel = mock.Mock()
-        path_panel.window_text.return_value = r"D:\au-one-set\converted"
-        copyright_panel = mock.Mock()
-        copyright_panel.window_text.return_value = "Copyright JL.C"
+    def test_packer_enters_each_delphi_directory_with_double_click_action(self) -> None:
+        class DirectoryList:
+            handle = None
+
+            def __init__(self) -> None:
+                self.stage = 0
+                self.selected = ""
+
+            def item_texts(self) -> list[str]:
+                if self.stage == 0:
+                    return ["D:\\", "au-one-set", "cursor"]
+                return ["D:\\", "au-one-set", "converted"]
+
+            def select(self, index: int) -> None:
+                self.selected = self.item_texts()[index]
+
+            def type_keys(self, keys: str) -> None:
+                self.asserted_keys = keys
+                self.stage += 1
+
+            def selected_text(self) -> str:
+                return self.selected
+
+        directory_list = DirectoryList()
         window = mock.Mock()
-        window.descendants.return_value = [copyright_panel, path_panel]
-        self.assertEqual(
-            packer_automation._current_directory(window),
-            r"D:\au-one-set\converted",
+        window.descendants.return_value = [directory_list]
+        packer_automation.navigate_directory_list(
+            window,
+            PureWindowsPath(r"D:\au-one-set\converted"),
         )
+        self.assertEqual(directory_list.selected, "converted")
+        self.assertEqual(directory_list.stage, 2)
 
     def test_packer_save_uses_delphi_bit_button_message(self) -> None:
         save = mock.Mock()
