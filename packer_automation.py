@@ -311,6 +311,7 @@ def _complete_save_as(
     output: Path,
     previous_signature: tuple[int, int] | None,
     timeout: float,
+    legacy_directory: Path | None = None,
 ) -> None:
     from pywinauto import Desktop
     from converter_automation import (
@@ -326,7 +327,7 @@ def _complete_save_as(
     win32_desktop = Desktop(backend="win32")
     previous_handles = _window_handles(window, desktop)
     previous_win32_handles = _window_handles(window, win32_desktop)
-    legacy_output = output.with_name("LIST.LST")
+    legacy_output = (legacy_directory or output.parent) / "LIST.LST"
     previous_legacy_signature = _signature(legacy_output)
     _click_save(window)
 
@@ -336,7 +337,11 @@ def _complete_save_as(
     while time.monotonic() < immediate_deadline:
         if _signature(output) not in {None, previous_signature}:
             return
-        if _promote_updated_legacy_list(output, previous_legacy_signature):
+        if _promote_updated_legacy_list(
+            output,
+            previous_legacy_signature,
+            legacy_output=legacy_output,
+        ):
             return
         time.sleep(0.1)
 
@@ -444,8 +449,9 @@ def _wait_for_package(
 def _promote_updated_legacy_list(
     output: Path,
     previous_legacy_signature: tuple[int, int] | None,
+    legacy_output: Path | None = None,
 ) -> bool:
-    legacy_output = output.with_name("LIST.LST")
+    legacy_output = legacy_output or output.with_name("LIST.LST")
     if legacy_output == output:
         return False
     current = _signature(legacy_output)
@@ -559,7 +565,12 @@ def automate_packer(
 ) -> Path:
     from pywinauto import Application
 
-    output = executable.parent / config.packer_output_name
+    staging_directory = resolve_packres_input_directory(
+        executable,
+        config.packres_input_directory,
+    )
+    staging_directory.mkdir(parents=True, exist_ok=True)
+    output = staging_directory / config.packer_output_name
     previous_signature = _signature(output)
     application = Application(backend="win32").start(
         f'"{executable}"',
@@ -592,19 +603,16 @@ def automate_packer(
             output,
             previous_signature,
             config.packer_timeout_seconds,
+            legacy_directory=executable.parent,
         )
         print(f"[合成] 已生成并校验：{output}", flush=True)
-        staging_directory = resolve_packres_input_directory(
-            executable,
-            config.packres_input_directory,
-        )
         staged = stage_converted_files(source_directory, staging_directory)
         print(
             f"[合成] 已复制 {len(staged)} 个转换文件到 {staging_directory}。",
             flush=True,
         )
         print(f"[合成] 执行 {config.packres_batch_name}……", flush=True)
-        final_output = run_packres_batch(executable.parent, config)
+        final_output = run_packres_batch(staging_directory, config)
         print(f"[合成] 输出成功：{final_output}", flush=True)
         return final_output
     except Exception as error:

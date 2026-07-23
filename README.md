@@ -347,11 +347,12 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 3. 在右侧树形目录逐层展开每一级文件夹；
 4. 选中 `converted`，文件顺序保持工具加载结果；
 5. 点击“保存”；
-6. 校验 `pRFiles.exe` 同级目录中的 `OUTPUT.LST` 已生成或更新；
+6. 将 `OUTPUT.LST` 直接另存到 `packres_input_directory`（即
+   `test_dir`）并校验；
 7. 清理 `packres_input_directory` 中上次遗留的杰理格式文件，再将
    `converted` 中的 `.a/.e/.f1a/.f1b/.f1c/.ump3` 复制进去；
-8. 执行同级的 `new_packres.bat`；
-9. 校验同级 `dir_music` 已生成或更新并显示“输出成功”。
+8. 在 `test_dir` 中执行 `new_packres.bat`；
+9. 校验 `test_dir\dir_music` 已生成或更新并显示“输出成功”。
 
 换到其他电脑时，在同一个 `audio_processor_config.json` 中修改：
 
@@ -379,20 +380,20 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 
 “保存”按钮会打开模态“另存为”窗口。脚本使用异步 `BM_CLICK`，避免
 同步按钮消息卡死；随后在文件名框填写
-`pRFiles.exe同级目录\OUTPUT.LST`，按回车保存，并自动确认覆盖已有文件。
+`test_dir\OUTPUT.LST` 的完整路径，按回车保存，并自动确认覆盖已有文件。
 只有 `OUTPUT.LST` 实际新建或更新时间发生变化才算合成成功。
 
 文件名查找同时支持新版文件窗口编号 1148、旧式 Win32 `edt1` 编号
 1152，以及 `ComboBoxEx32/ComboBox` 内嵌 Edit。仍无法识别时会在
-`pRFiles.exe` 同级生成 `packer-save-as-controls.txt`，其中只记录
+`test_dir` 中生成 `packer-save-as-controls.txt`，其中只记录
 “另存为”窗口，便于继续适配。
 
 另一些 `pRFiles.exe` 构建不会弹出另存为，而是直接更新同级的固定文件
-`LIST.LST`。脚本会监测其签名变化并复制为 `OUTPUT.LST`。若
+`LIST.LST`。脚本会监测其签名变化并复制到 `test_dir\OUTPUT.LST`。若
 `LIST.LST/OUTPUT.LST` 都没有变化且两个自动化后端都未发现新窗口，也会
 生成 `packer-save-as-controls.txt`，列出当时所有可见窗口。
 
-`new_packres.bat` 通过 `cmd.exe /d /c call` 在 `packres` 目录中执行，
+`new_packres.bat` 通过 `cmd.exe /d /c call` 在 `test_dir` 中执行，
 默认超时60秒。退出码非0或 `dir_music` 没有实际更新都会判定第4部分
 失败；日志、JSON 等非转换格式文件不会复制到 `test_dir`。配置值写成
 相对路径 `test_dir` 时，默认按

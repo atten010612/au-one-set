@@ -1045,6 +1045,27 @@ class AudioProcessorTests(unittest.TestCase):
             )
             self.assertEqual(output.read_bytes(), b"new package")
 
+    def test_packer_copies_legacy_list_across_into_test_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packres = root / "packres"
+            test_dir = root / "test_dir"
+            packres.mkdir()
+            test_dir.mkdir()
+            legacy = packres / "LIST.LST"
+            output = test_dir / "OUTPUT.LST"
+            legacy.write_bytes(b"old")
+            previous = packer_automation._signature(legacy)
+            legacy.write_bytes(b"new list")
+            self.assertTrue(
+                packer_automation._promote_updated_legacy_list(
+                    output,
+                    previous,
+                    legacy_output=legacy,
+                )
+            )
+            self.assertEqual(output.read_bytes(), b"new list")
+
     def test_packer_stages_only_converted_audio_formats(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
