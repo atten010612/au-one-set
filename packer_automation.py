@@ -6,6 +6,7 @@ import json
 import ntpath
 import os
 import shutil
+import subprocess
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -14,6 +15,9 @@ from typing import Any
 
 class PackerAutomationError(RuntimeError):
     """Expected packer setup or UI automation failure."""
+
+
+PACKED_AUDIO_EXTENSIONS = {".a", ".e", ".f1a", ".f1b", ".f1c", ".ump3"}
 
 
 def choose_packer_executable() -> Path | None:
@@ -451,6 +455,75 @@ def _promote_updated_legacy_list(
     return _signature(output) is not None
 
 
+def stage_converted_files(
+    source_directory: Path,
+    packer_directory: Path,
+) -> list[Path]:
+    source_files = sorted(
+        (
+            path
+            for path in source_directory.iterdir()
+            if path.is_file() and path.suffix.lower() in PACKED_AUDIO_EXTENSIONS
+        ),
+        key=lambda path: path.name.casefold(),
+    )
+    if not source_files:
+        raise PackerAutomationError(
+            f"{source_directory} 中没有可复制的杰理转换文件"
+        )
+    staged: list[Path] = []
+    for source in source_files:
+        destination = packer_directory / source.name
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        staged.append(destination)
+    return staged
+
+
+def run_packres_batch(
+    packer_directory: Path,
+    config: Any,
+) -> Path:
+    batch = packer_directory / config.packres_batch_name
+    if not batch.is_file():
+        raise PackerAutomationError(f"找不到资源打包脚本：{batch}")
+    output = packer_directory / config.packres_output_name
+    previous_signature = _signature(output)
+    comspec = os.environ.get("COMSPEC", "cmd.exe")
+    command = [comspec, "/d", "/c", "call", str(batch)]
+    try:
+        process = subprocess.run(
+            command,
+            cwd=str(packer_directory),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=config.packres_timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise PackerAutomationError(
+            f"{config.packres_batch_name} 执行超过 "
+            f"{config.packres_timeout_seconds} 秒"
+        ) from error
+    if process.returncode:
+        detail = process.stdout.strip()
+        raise PackerAutomationError(
+            f"{config.packres_batch_name} 退出代码 {process.returncode}"
+            + (f"：{detail}" if detail else "")
+        )
+    current_signature = _signature(output)
+    if current_signature is None or current_signature == previous_signature:
+        detail = process.stdout.strip()
+        raise PackerAutomationError(
+            f"批处理结束但 {output} 没有生成或更新"
+            + (f"：{detail}" if detail else "")
+        )
+    return output
+
+
 def automate_packer(
     executable: Path,
     source_directory: Path,
@@ -493,7 +566,15 @@ def automate_packer(
             config.packer_timeout_seconds,
         )
         print(f"[合成] 已生成并校验：{output}", flush=True)
-        return output
+        staged = stage_converted_files(source_directory, executable.parent)
+        print(
+            f"[合成] 已复制 {len(staged)} 个转换文件到 {executable.parent}。",
+            flush=True,
+        )
+        print(f"[合成] 执行 {config.packres_batch_name}……", flush=True)
+        final_output = run_packres_batch(executable.parent, config)
+        print(f"[合成] 输出成功：{final_output}", flush=True)
+        return final_output
     except Exception as error:
         diagnostics = executable.parent / "packer-controls.txt"
         try:

@@ -303,6 +303,8 @@ class AudioProcessorTests(unittest.TestCase):
             self.assertEqual(config.bit_rate, "32K")
             self.assertTrue(config.packer_enabled)
             self.assertEqual(config.packer_output_name, "OUTPUT.LST")
+            self.assertEqual(config.packres_batch_name, "new_packres.bat")
+            self.assertEqual(config.packres_output_name, "dir_music")
 
             dragged_folder = root / "dragged"
             dragged_folder.mkdir()
@@ -1017,6 +1019,42 @@ class AudioProcessorTests(unittest.TestCase):
                 packer_automation._promote_updated_legacy_list(output, previous)
             )
             self.assertEqual(output.read_bytes(), b"new package")
+
+    def test_packer_stages_only_converted_audio_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "converted"
+            target = root / "packres"
+            source.mkdir()
+            target.mkdir()
+            expected_names = {"a.f1a", "b.f1b", "c.ump3", "d.a", "e.e"}
+            for name in expected_names:
+                (source / name).write_bytes(name.encode())
+            (source / "converter-controls.txt").write_text("log", encoding="utf-8")
+            staged = packer_automation.stage_converted_files(source, target)
+            self.assertEqual({path.name for path in staged}, expected_names)
+            self.assertFalse((target / "converter-controls.txt").exists())
+
+    def test_packres_batch_requires_updated_dir_music(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            batch = root / "new_packres.bat"
+            batch.write_text("@echo off", encoding="utf-8")
+            config = converter_automation.ConverterConfig()
+
+            def run_batch(*args: object, **kwargs: object) -> mock.Mock:
+                (root / "dir_music").write_bytes(b"package")
+                return mock.Mock(returncode=0, stdout="ok")
+
+            with mock.patch.object(
+                packer_automation.subprocess,
+                "run",
+                side_effect=run_batch,
+            ) as run:
+                output = packer_automation.run_packres_batch(root, config)
+            self.assertEqual(output, root / "dir_music")
+            self.assertEqual(run.call_args.kwargs["cwd"], str(root))
+            self.assertIn(str(batch), run.call_args.args[0])
 
 
 if __name__ == "__main__":

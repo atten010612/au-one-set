@@ -236,7 +236,10 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
   "packer_path": "D:\\soft\\语音烧录\\杰理音频转换工具\\AD140打包工具\\packres\\pRFiles.exe",
   "packer_window_title_regex": ".*调整文件顺序.*",
   "packer_output_name": "OUTPUT.LST",
-  "packer_timeout_seconds": 30
+  "packer_timeout_seconds": 30,
+  "packres_batch_name": "new_packres.bat",
+  "packres_output_name": "dir_music",
+  "packres_timeout_seconds": 60
 }
 ```
 
@@ -331,7 +334,11 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 3. 在右侧树形目录逐层展开每一级文件夹；
 4. 选中 `converted`，文件顺序保持工具加载结果；
 5. 点击“保存”；
-6. 校验 `pRFiles.exe` 同级目录中的 `OUTPUT.LST` 已生成或更新。
+6. 校验 `pRFiles.exe` 同级目录中的 `OUTPUT.LST` 已生成或更新；
+7. 将 `converted` 中的 `.a/.e/.f1a/.f1b/.f1c/.ump3` 文件复制到
+   `pRFiles.exe` 同级目录；
+8. 执行同级的 `new_packres.bat`；
+9. 校验同级 `dir_music` 已生成或更新并显示“输出成功”。
 
 换到其他电脑时，在同一个 `audio_processor_config.json` 中修改：
 
@@ -370,6 +377,10 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 `LIST.LST`。脚本会监测其签名变化并复制为 `OUTPUT.LST`。若
 `LIST.LST/OUTPUT.LST` 都没有变化且两个自动化后端都未发现新窗口，也会
 生成 `packer-save-as-controls.txt`，列出当时所有可见窗口。
+
+`new_packres.bat` 通过 `cmd.exe /d /c call` 在 `packres` 目录中执行，
+默认超时60秒。退出码非0或 `dir_music` 没有实际更新都会判定第4部分
+失败；日志、JSON 等非转换格式文件不会复制到打包工具目录。
 
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
