@@ -369,6 +369,54 @@ class AudioProcessorTests(unittest.TestCase):
             timeout=0.5,
         )
 
+    def test_select_all_focus_falls_back_to_clicking_file_area(self) -> None:
+        class Rectangle:
+            left = 100
+            top = 200
+
+            def width(self) -> int:
+                return 1000
+
+            def height(self) -> int:
+                return 600
+
+        pane = mock.Mock()
+        pane.is_visible.return_value = True
+        pane.is_enabled.return_value = True
+        pane.rectangle.return_value = Rectangle()
+        dialog = mock.Mock()
+        dialog.child_window.side_effect = RuntimeError("ItemsView unavailable")
+        dialog.descendants.return_value = [pane]
+        with (
+            mock.patch.object(
+                converter_automation,
+                "_focus_win32_file_list",
+                return_value=False,
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_mouse_click",
+            ) as mouse_click,
+        ):
+            method = converter_automation._focus_file_list_for_select_all(dialog)
+        self.assertEqual(method, "文件区域点击")
+        mouse_click.assert_called_once_with((750, 560))
+
+    def test_select_all_uses_win32_list_before_physical_click(self) -> None:
+        dialog = mock.Mock()
+        dialog.child_window.side_effect = RuntimeError("ItemsView unavailable")
+        with (
+            mock.patch.object(
+                converter_automation,
+                "_focus_win32_file_list",
+                return_value=True,
+            ),
+            mock.patch.object(converter_automation, "_mouse_click") as mouse_click,
+        ):
+            method = converter_automation._focus_file_list_for_select_all(dialog)
+        self.assertEqual(method, "SysListView32")
+        mouse_click.assert_not_called()
+
     def test_converter_selects_duplicate_32k_by_column(self) -> None:
         class Rectangle:
             def __init__(self, left: int) -> None:

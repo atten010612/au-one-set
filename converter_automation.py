@@ -910,6 +910,76 @@ def _add_file_batch(
         time.sleep(0.3)
 
 
+def _focus_win32_file_list(dialog: Any) -> bool:
+    from pywinauto import Desktop
+
+    handles: list[int] = []
+    if getattr(dialog, "handle", None):
+        handles.append(int(dialog.handle))
+    try:
+        handles.extend(
+            int(control.handle)
+            for control in dialog.descendants(control_type="Window")
+            if getattr(control, "handle", None)
+        )
+    except Exception:
+        pass
+    for handle in dict.fromkeys(handles):
+        try:
+            root = Desktop(backend="win32").window(handle=handle)
+            lists = root.descendants(class_name="SysListView32")
+            if lists:
+                lists[0].set_focus()
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _mouse_click(coords: tuple[int, int]) -> None:
+    from pywinauto import mouse
+
+    mouse.click(button="left", coords=coords)
+
+
+def _focus_file_list_for_select_all(dialog: Any) -> str:
+    try:
+        items_view = dialog.child_window(auto_id="ItemsView", control_type="List")
+        items_view.wait("visible enabled", timeout=2)
+        items_view.set_focus()
+        return "ItemsView"
+    except Exception:
+        pass
+    if _focus_win32_file_list(dialog):
+        return "SysListView32"
+
+    # Windows 11 may expose the shell list as DirectUI panes only. A physical
+    # click inside the largest content pane gives the file list keyboard focus;
+    # clicking an item or blank column is both safe because Ctrl+A follows.
+    try:
+        panes = [
+            pane
+            for pane in dialog.descendants(control_type="Pane")
+            if pane.is_visible() and pane.is_enabled()
+        ]
+    except Exception:
+        panes = []
+    if not panes:
+        raise ConverterAutomationError("文件窗口没有可点击的文件区域")
+    pane = max(
+        panes,
+        key=lambda control: (
+            control.rectangle().width() * control.rectangle().height()
+        ),
+    )
+    rectangle = pane.rectangle()
+    x = int(rectangle.left + rectangle.width() * 0.65)
+    y = int(rectangle.top + rectangle.height() * 0.60)
+    _mouse_click((x, y))
+    time.sleep(0.2)
+    return "文件区域点击"
+
+
 def _add_whole_folder(
     window: Any,
     folder: Path,
@@ -920,7 +990,6 @@ def _add_whole_folder(
     _click_button(window, "添加文件")
     dialog = _find_new_dialog(window, desktop, previous_handles)
     filename = _find_filename_edit(dialog)
-    items_view: Any | None = None
     try:
         dialog.set_focus()
         _set_windows_clipboard(str(folder))
@@ -929,9 +998,8 @@ def _add_whole_folder(
         _send_keys("^v")
         _send_keys("{ENTER}")
         time.sleep(0.5)
-        items_view = dialog.child_window(auto_id="ItemsView", control_type="List")
-        items_view.wait("visible enabled", timeout=5)
-        items_view.set_focus()
+        focus_method = _focus_file_list_for_select_all(dialog)
+        print(f"[转换] 已通过{focus_method}聚焦文件列表。", flush=True)
     except Exception as error:
         try:
             dialog.set_focus()
@@ -941,12 +1009,12 @@ def _add_whole_folder(
         except Exception:
             pass
         raise ConverterAutomationError(
-            "文件选择窗口没有找到文件列表 ItemsView"
+            f"无法聚焦文件列表：{error}"
         ) from error
     try:
         _send_keys("^a")
         _send_keys("{ENTER}")
-        monitor = filename if filename is not None else items_view
+        monitor = filename if filename is not None else dialog
         _wait_for_file_dialog_submission(monitor, dialog)
         _wait_for_added_files(window, previous_item_count)
     except Exception:
