@@ -261,7 +261,7 @@ class AudioProcessorTests(unittest.TestCase):
             def __init__(self, title: str, left: int) -> None:
                 self.title = title
                 self.left = left
-                self.clicked = False
+                self.selected = False
 
             def is_visible(self) -> bool:
                 return True
@@ -275,8 +275,14 @@ class AudioProcessorTests(unittest.TestCase):
             def window_text(self) -> str:
                 return self.title
 
-            def click_input(self) -> None:
-                self.clicked = True
+            def select(self) -> None:
+                self.selected = True
+
+            def click(self) -> None:
+                self.selected = True
+
+            def is_selected(self) -> bool:
+                return self.selected
 
         class Window:
             def __init__(self, controls: list[Control]) -> None:
@@ -298,10 +304,10 @@ class AudioProcessorTests(unittest.TestCase):
             ]
         )
         converter_automation._select_radio(window, "32K", column=1)
-        self.assertTrue(sample_32k.clicked)
-        self.assertFalse(bitrate_32k.clicked)
+        self.assertTrue(sample_32k.selected)
+        self.assertFalse(bitrate_32k.selected)
         converter_automation._select_radio(window, "32K", column=2)
-        self.assertTrue(bitrate_32k.clicked)
+        self.assertTrue(bitrate_32k.selected)
 
     def test_successful_audio_outputs_are_forwarded_to_converter(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -455,9 +461,9 @@ class AudioProcessorTests(unittest.TestCase):
         window.child_window.side_effect = RuntimeError("exact title unavailable")
         window.descendants.return_value = [button]
         converter_automation._click_button(window, "开始转换")
-        button.click_input.assert_called_once_with()
+        button.click.assert_called_once_with()
 
-    def test_output_directory_uses_clipboard_not_uia_set_value(self) -> None:
+    def test_output_directory_is_pasted_and_verified_without_uia_set_value(self) -> None:
         narrow_edit = mock.Mock()
         narrow_edit.is_visible.return_value = True
         narrow_edit.is_enabled.return_value = True
@@ -475,12 +481,102 @@ class AudioProcessorTests(unittest.TestCase):
                 "_set_windows_clipboard",
             ) as set_clipboard,
             mock.patch.object(converter_automation, "_send_keys") as send_keys,
+            mock.patch.object(
+                converter_automation,
+                "_native_set_window_text",
+                return_value=False,
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_read_control_text",
+                side_effect=["", str(output_path)],
+            ),
         ):
             converter_automation._set_output_directory(window, output_path)
-        output_edit.click_input.assert_called_once_with()
+        output_edit.set_focus.assert_called_once_with()
         output_edit.set_edit_text.assert_not_called()
         set_clipboard.assert_called_once_with(str(output_path))
-        send_keys.assert_called_once_with("^a^v")
+        self.assertEqual(
+            [call.args[0] for call in send_keys.call_args_list],
+            ["^a", "^v", "{TAB}"],
+        )
+
+    def test_output_directory_prefers_verified_native_window_text(self) -> None:
+        edit = mock.Mock()
+        edit.is_visible.return_value = True
+        edit.is_enabled.return_value = True
+        edit.rectangle.return_value.width.return_value = 600
+        window = mock.Mock()
+        window.descendants.return_value = [edit]
+        output_path = Path(r"D:\au-one-set\converted")
+        with (
+            mock.patch.object(
+                converter_automation,
+                "_native_set_window_text",
+                return_value=True,
+            ) as native_set,
+            mock.patch.object(
+                converter_automation,
+                "_read_control_text",
+                return_value=str(output_path),
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_set_windows_clipboard",
+            ) as set_clipboard,
+        ):
+            converter_automation._set_output_directory(window, output_path)
+        native_set.assert_called_once_with(edit, str(output_path))
+        set_clipboard.assert_not_called()
+
+    def test_conversion_success_requires_actual_output_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            previous = converter_automation._file_snapshot(output)
+            (output / "result.f1a").write_bytes(b"converted")
+            with mock.patch.object(
+                converter_automation,
+                "_new_visible_windows",
+                return_value=[],
+            ):
+                count = converter_automation._wait_for_conversion_outputs(
+                    mock.Mock(),
+                    mock.Mock(),
+                    output,
+                    previous,
+                    previous_handles=set(),
+                    expected_count=1,
+                    timeout=0.1,
+                )
+            self.assertEqual(count, 1)
+
+    def test_conversion_error_dialog_prevents_false_success(self) -> None:
+        dialog = mock.Mock()
+        dialog.window_text.return_value = "音频文件转换工具 1.2.2"
+        message = mock.Mock()
+        message.window_text.return_value = "错误：请选择输出文件位置。"
+        dialog.descendants.return_value = [message]
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.object(
+                    converter_automation,
+                    "_new_visible_windows",
+                    return_value=[dialog],
+                ),
+                self.assertRaisesRegex(
+                    converter_automation.ConverterAutomationError,
+                    "请选择输出文件位置",
+                ),
+            ):
+                converter_automation._wait_for_conversion_outputs(
+                    mock.Mock(),
+                    mock.Mock(),
+                    Path(directory),
+                    previous_files={},
+                    previous_handles=set(),
+                    expected_count=1,
+                    timeout=0.1,
+                )
 
 
 if __name__ == "__main__":

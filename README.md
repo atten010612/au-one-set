@@ -206,7 +206,8 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
   "auto_install_pywinauto": true,
   "clear_existing_files": true,
   "window_title_regex": ".*音频文件转换工具.*",
-  "startup_timeout_seconds": 20
+  "startup_timeout_seconds": 20,
+  "conversion_timeout_seconds": 120
 }
 ```
 
@@ -256,9 +257,14 @@ audio_processor_config.json
 标题消失。按钮名称在部分版本中带有换行，匹配时会自动忽略空白字符。
 
 转换工具的“保存目录”输入框不接受 UIA `SetValue`，会返回
-`0x80131509 InvalidOperationException`。脚本会点击该输入框并通过
-Unicode 剪贴板粘贴目录。控制台会逐项显示“添加音频、设置目录、选择
-格式、选择采样率、选择码率、开始转换”，错误信息会注明失败步骤。
+`0x80131509 InvalidOperationException`。脚本优先通过原生 `WM_SETTEXT`
+设置并读取校验，必要时才使用 Unicode 剪贴板。格式、采样率和码率通过
+UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 DPI
+缩放影响的屏幕坐标。
+
+点击“开始转换”后，脚本会监测错误弹窗，并等待保存目录出现与输入文件
+数量相同的新文件或更新文件。默认等待上限为 120 秒；没有实际结果时
+返回错误代码 3，不再仅凭点击成功就报告完成。
 
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有

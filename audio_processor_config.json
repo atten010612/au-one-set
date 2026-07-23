@@ -8,5 +8,6 @@
   "auto_install_pywinauto": true,
   "clear_existing_files": true,
   "window_title_regex": ".*音频文件转换工具.*",
-  "startup_timeout_seconds": 20
+  "startup_timeout_seconds": 20,
+  "conversion_timeout_seconds": 120
 }

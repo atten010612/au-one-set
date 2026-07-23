@@ -936,8 +936,8 @@ def run_converter_after_processing(
         )
         if converted_directory:
             log(
-                "[转换] 已添加 "
-                f"{len(outputs)} 个文件并点击“开始转换”；保存目录：{converted_directory}"
+                "[转换] 已完成并校验 "
+                f"{len(outputs)} 个文件；保存目录：{converted_directory}"
             )
         return True
     except (OSError, ValueError, ConverterAutomationError) as error:

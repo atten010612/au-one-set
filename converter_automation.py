@@ -36,6 +36,7 @@ class ConverterConfig:
     clear_existing_files: bool = True
     window_title_regex: str = r".*音频文件转换工具.*"
     startup_timeout_seconds: int = 20
+    conversion_timeout_seconds: int = 120
 
     def validate(self) -> None:
         self.format = self.format.upper()
@@ -58,6 +59,8 @@ class ConverterConfig:
             raise ConverterAutomationError("output_folder_name 不能为空")
         if self.startup_timeout_seconds < 1:
             raise ConverterAutomationError("startup_timeout_seconds 必须大于 0")
+        if self.conversion_timeout_seconds < 1:
+            raise ConverterAutomationError("conversion_timeout_seconds 必须大于 0")
 
 
 def load_converter_config(path: Path) -> ConverterConfig:
@@ -208,14 +211,14 @@ def _click_button(window: Any, title: str) -> None:
     try:
         button = window.child_window(title=title, control_type="Button")
         button.wait("visible enabled", timeout=2)
-        button.click_input()
+        button.click()
         return
     except Exception:
         pass
     normalized_title = "".join(title.split())
     for button in _visible_controls(window, "Button"):
         if "".join(button.window_text().split()) == normalized_title:
-            button.click_input()
+            button.click()
             return
     raise ConverterAutomationError(f"没有找到按钮：{title}")
 
@@ -245,7 +248,79 @@ def _select_radio(window: Any, title: str, column: int) -> None:
     if not matches:
         raise ConverterAutomationError(f"没有找到选项：{title}")
     selected = min(matches, key=lambda control: abs(control.rectangle().left - center))
-    selected.click_input()
+    errors: list[str] = []
+    for method_name in ("select", "click"):
+        try:
+            getattr(selected, method_name)()
+            time.sleep(0.1)
+            if selected.is_selected():
+                return
+        except Exception as error:
+            errors.append(f"{method_name}: {error}")
+    raise ConverterAutomationError(
+        f"选项 {title} 未被选中；" + "；".join(errors)
+    )
+
+
+def _native_window_text(control: Any) -> str:
+    handle = getattr(control, "handle", None)
+    if os.name != "nt" or not handle:
+        return ""
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_int,
+        ]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        length = user32.GetWindowTextLengthW(int(handle))
+        buffer = ctypes.create_unicode_buffer(max(length + 1, 2))
+        user32.GetWindowTextW(int(handle), buffer, len(buffer))
+        return buffer.value
+    except Exception:
+        return ""
+
+
+def _read_control_text(control: Any) -> str:
+    native_text = _native_window_text(control)
+    if native_text:
+        return native_text
+    for method_name in ("get_value", "window_text"):
+        try:
+            value = getattr(control, method_name)()
+            if value:
+                return str(value)
+        except Exception:
+            continue
+    return ""
+
+
+def _native_set_window_text(control: Any, text: str) -> bool:
+    handle = getattr(control, "handle", None)
+    if os.name != "nt" or not handle:
+        return False
+    try:
+        import ctypes
+
+        set_window_text = ctypes.windll.user32.SetWindowTextW
+        set_window_text.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+        set_window_text.restype = ctypes.c_int
+        return bool(set_window_text(int(handle), str(text)))
+    except Exception:
+        return False
+
+
+def _same_windows_path(actual: str, expected: str) -> bool:
+    if not actual:
+        return False
+    return os.path.normcase(os.path.normpath(actual.strip().strip('"'))) == os.path.normcase(
+        os.path.normpath(expected)
+    )
 
 
 def _set_output_directory(window: Any, output_directory: Path) -> None:
@@ -254,12 +329,31 @@ def _set_output_directory(window: Any, output_directory: Path) -> None:
         raise ConverterAutomationError("没有找到“保存目录”输入框")
     # The converter 1.2.2 main window has one editable text field: 保存目录.
     edit = max(edits, key=lambda control: control.rectangle().width())
-    # Its UIA ValuePattern raises .NET InvalidOperationException (0x80131509)
-    # on SetValue. Physical focus plus clipboard paste works with this custom
-    # edit while preserving Chinese paths.
-    edit.click_input()
-    _set_windows_clipboard(str(output_directory))
-    _send_keys("^a^v")
+    expected = str(output_directory)
+
+    # Its UIA ValuePattern raises .NET InvalidOperationException (0x80131509).
+    # WM_SETTEXT does not depend on DPI coordinates and works with this native
+    # custom edit.
+    _native_set_window_text(edit, expected)
+    time.sleep(0.1)
+    if _same_windows_path(_read_control_text(edit), expected):
+        return
+
+    # Fallback for variants without a native HWND.
+    try:
+        edit.set_focus()
+    except Exception:
+        edit.click_input()
+    _set_windows_clipboard(expected)
+    _send_keys("^a")
+    _send_keys("^v")
+    _send_keys("{TAB}")
+    time.sleep(0.2)
+    actual = _read_control_text(edit)
+    if not _same_windows_path(actual, expected):
+        raise ConverterAutomationError(
+            f"保存目录校验失败：期望 {expected!r}，控件实际值 {actual!r}"
+        )
 
 
 def _window_handles(window: Any, desktop: Any) -> set[int]:
@@ -360,6 +454,94 @@ def _wait_for_added_files(
     raise ConverterAutomationError("提交文件路径后，转换文件列表没有增加")
 
 
+def _file_snapshot(directory: Path) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        snapshot[str(path.resolve()).casefold()] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+def _new_visible_windows(
+    window: Any,
+    desktop: Any,
+    previous_handles: set[int],
+) -> list[Any]:
+    candidates: list[Any] = []
+    try:
+        candidates.extend(desktop.windows())
+    except Exception:
+        pass
+    try:
+        candidates.extend(window.descendants(control_type="Window"))
+    except Exception:
+        pass
+    unique: dict[int, Any] = {}
+    for candidate in candidates:
+        handle = getattr(candidate, "handle", None)
+        if not handle or int(handle) in previous_handles:
+            continue
+        try:
+            if candidate.is_visible():
+                unique[int(handle)] = candidate
+        except Exception:
+            continue
+    return list(unique.values())
+
+
+def _window_message(window: Any) -> str:
+    messages: list[str] = []
+    try:
+        title = " ".join(window.window_text().split())
+        if title:
+            messages.append(title)
+    except Exception:
+        pass
+    try:
+        for control in window.descendants(control_type="Text"):
+            text = " ".join(control.window_text().split())
+            if text and text not in messages:
+                messages.append(text)
+    except Exception:
+        pass
+    return "；".join(messages)
+
+
+def _wait_for_conversion_outputs(
+    window: Any,
+    desktop: Any,
+    output_directory: Path,
+    previous_files: dict[str, tuple[int, int]],
+    previous_handles: set[int],
+    expected_count: int,
+    timeout: float,
+) -> int:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        new_windows = _new_visible_windows(window, desktop, previous_handles)
+        if new_windows:
+            message = _window_message(new_windows[-1]) or "转换工具弹出错误窗口"
+            raise ConverterAutomationError(f"转换工具提示：{message}")
+        current_files = _file_snapshot(output_directory)
+        changed = [
+            path
+            for path, signature in current_files.items()
+            if previous_files.get(path) != signature
+        ]
+        if len(changed) >= expected_count:
+            return len(changed)
+        time.sleep(0.25)
+    raise ConverterAutomationError(
+        f"{timeout:g} 秒内未在 {output_directory} 发现 "
+        f"{expected_count} 个转换结果"
+    )
+
+
 def _find_filename_edit(dialog: Any) -> Any | None:
     # Prefer the stable common-dialog automation id. Do not guess among visible
     # Edit controls: in this converter the only UIA-visible edit is the search
@@ -454,6 +636,7 @@ def automate_converter(
             timeout=config.startup_timeout_seconds,
         )
         window.set_focus()
+        desktop = Desktop(backend="uia")
         if config.clear_existing_files:
             try:
                 _click_button(window, "清空文件")
@@ -462,7 +645,7 @@ def automate_converter(
         steps = [
             (
                 "添加处理后的音频",
-                lambda: _add_files(window, files, Desktop(backend="uia")),
+                lambda: _add_files(window, files, desktop),
             ),
             (
                 "设置保存目录",
@@ -480,10 +663,6 @@ def automate_converter(
                 f"选择码率 {config.bit_rate}",
                 lambda: _select_radio(window, config.bit_rate, column=2),
             ),
-            (
-                "点击开始转换",
-                lambda: _click_button(window, "开始转换"),
-            ),
         ]
         for label, action in steps:
             print(f"[转换] {label}……", flush=True)
@@ -491,7 +670,30 @@ def automate_converter(
                 action()
             except Exception as error:
                 raise ConverterAutomationError(f"{label}失败：{error}") from error
-        time.sleep(0.5)
+
+        previous_files = _file_snapshot(output_directory)
+        previous_handles = _window_handles(window, desktop)
+        print("[转换] 点击开始转换……", flush=True)
+        try:
+            _click_button(window, "开始转换")
+        except Exception as error:
+            raise ConverterAutomationError(f"点击开始转换失败：{error}") from error
+        print("[转换] 等待并校验转换结果……", flush=True)
+        try:
+            output_count = _wait_for_conversion_outputs(
+                window,
+                desktop,
+                output_directory,
+                previous_files,
+                previous_handles,
+                expected_count=len(files),
+                timeout=config.conversion_timeout_seconds,
+            )
+        except Exception as error:
+            if isinstance(error, ConverterAutomationError):
+                raise
+            raise ConverterAutomationError(f"校验转换结果失败：{error}") from error
+        print(f"[转换] 已确认生成 {output_count} 个结果文件。", flush=True)
     except Exception as error:
         controls_file = diagnostics_directory / "converter-controls.txt"
         try:
