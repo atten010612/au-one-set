@@ -363,9 +363,8 @@ def collect_files(
             if not candidate.is_file() or candidate.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
             resolved = candidate.resolve()
-            if REPORT_NAME in resolved.parts or "processed" in {
-                part.casefold() for part in resolved.parts
-            }:
+            path_parts = {part.casefold() for part in resolved.parts}
+            if path_parts & {"processed", "converted"}:
                 continue
             if output_resolved and (resolved == output_resolved or output_resolved in resolved.parents):
                 continue
@@ -374,6 +373,10 @@ def collect_files(
                 seen.add(key)
                 collected.append(resolved)
     return sorted(collected, key=lambda item: str(item).casefold())
+
+
+def should_scan_recursively(inputs: Sequence[str], recursive_flag: bool) -> bool:
+    return recursive_flag or not inputs
 
 
 def output_directory(source: Path, explicit_output: Path | None) -> Path:
@@ -961,7 +964,14 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         raise SystemExit(f"无法读取处理计划：{error}") from error
 
-    files = collect_files(args.inputs, args.recursive, explicit_output)
+    # Double-clicking the BAT has no positional inputs. In that mode scan the
+    # script/current directory recursively so users can place either audio
+    # files or one containing folder beside the script.
+    files = collect_files(
+        args.inputs,
+        recursive=should_scan_recursively(args.inputs, args.recursive),
+        explicit_output=explicit_output,
+    )
     if not files:
         log("没有找到支持的音频文件。")
         return 1

@@ -48,10 +48,22 @@ class AudioProcessorTests(unittest.TestCase):
             processed = root / "processed"
             processed.mkdir()
             (processed / "voice.wav").touch()
+            converted = root / "converted"
+            converted.mkdir()
+            (converted / "voice.mp3").touch()
             self.assertEqual(
                 audio_processor.collect_files([str(root)], True, None),
                 [expected],
             )
+
+    def test_double_click_mode_scans_child_audio_folders(self) -> None:
+        self.assertTrue(audio_processor.should_scan_recursively([], False))
+        self.assertFalse(
+            audio_processor.should_scan_recursively(["voice-folder"], False)
+        )
+        self.assertTrue(
+            audio_processor.should_scan_recursively(["voice-folder"], True)
+        )
 
     def test_denoise_filter_uses_configured_reduction(self) -> None:
         args = argparse.Namespace(
@@ -401,6 +413,21 @@ class AudioProcessorTests(unittest.TestCase):
             timeout=0.1,
         )
         self.assertIs(found, converter_titled_dialog)
+
+    def test_filename_field_uses_common_dialog_id_not_search_box(self) -> None:
+        filename = mock.Mock()
+
+        class Dialog:
+            def child_window(self, **criteria: object) -> mock.Mock:
+                self.criteria = criteria
+                return filename
+
+        dialog = Dialog()
+        self.assertIs(converter_automation._find_filename_edit(dialog), filename)
+        self.assertEqual(
+            dialog.criteria,
+            {"auto_id": "1148", "control_type": "Edit"},
+        )
 
 
 if __name__ == "__main__":

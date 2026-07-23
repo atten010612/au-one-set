@@ -319,19 +319,50 @@ def _wait_until_hidden(window: Any, timeout: float = 30) -> None:
     raise ConverterAutomationError("提交文件路径后，文件选择窗口没有关闭")
 
 
+def _find_filename_edit(dialog: Any) -> Any | None:
+    # Prefer the stable common-dialog automation id. Do not guess among visible
+    # Edit controls: in this converter the only UIA-visible edit is the search
+    # box, which sends pasted filenames into Windows Search.
+    try:
+        filename = dialog.child_window(auto_id="1148", control_type="Edit")
+        filename.wait("visible enabled", timeout=2)
+        return filename
+    except Exception:
+        pass
+
+    # The converter's file dialog hides the filename field from UIA but still
+    # exposes the classic Win32 control id 1148. Attach to the same handle with
+    # the win32 backend so Unicode paths are written into the correct field.
+    from pywinauto import Desktop
+
+    handles: list[int] = []
+    if getattr(dialog, "handle", None):
+        handles.append(int(dialog.handle))
+    try:
+        handles.extend(
+            int(control.handle)
+            for control in dialog.descendants(control_type="Window")
+            if getattr(control, "handle", None)
+        )
+    except Exception:
+        pass
+    for handle in dict.fromkeys(handles):
+        try:
+            win32_dialog = Desktop(backend="win32").window(handle=handle)
+            filename = win32_dialog.child_window(control_id=1148, class_name="Edit")
+            filename.wait("exists enabled", timeout=1)
+            return filename
+        except Exception:
+            continue
+    return None
+
+
 def _add_files(window: Any, files: Sequence[Path], desktop: Any) -> None:
     previous_handles = _window_handles(window, desktop)
     _click_button(window, "添加文件")
     dialog = _find_new_dialog(window, desktop, previous_handles)
     file_text = file_dialog_text(files)
-    filename: Any | None = None
-    try:
-        filename = dialog.child_window(auto_id="1148", control_type="Edit")
-        filename.wait("visible enabled", timeout=5)
-    except Exception:
-        edits = _visible_controls(dialog, "Edit")
-        if edits:
-            filename = edits[-1]
+    filename = _find_filename_edit(dialog)
 
     if filename is not None:
         filename.set_edit_text(file_text)
