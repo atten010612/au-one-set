@@ -37,6 +37,11 @@ class ConverterConfig:
     window_title_regex: str = r".*音频文件转换工具.*"
     startup_timeout_seconds: int = 20
     conversion_timeout_seconds: int = 120
+    packer_enabled: bool = True
+    packer_path: str = ""
+    packer_window_title_regex: str = r".*调整文件顺序.*"
+    packer_output_name: str = "OUTPUT.LST"
+    packer_timeout_seconds: int = 30
 
     def validate(self) -> None:
         self.format = self.format.upper()
@@ -61,6 +66,10 @@ class ConverterConfig:
             raise ConverterAutomationError("startup_timeout_seconds 必须大于 0")
         if self.conversion_timeout_seconds < 1:
             raise ConverterAutomationError("conversion_timeout_seconds 必须大于 0")
+        if not self.packer_output_name.strip():
+            raise ConverterAutomationError("packer_output_name 不能为空")
+        if self.packer_timeout_seconds < 1:
+            raise ConverterAutomationError("packer_timeout_seconds 必须大于 0")
 
 
 def load_converter_config(path: Path) -> ConverterConfig:
@@ -805,4 +814,16 @@ def run_configured_converter(
         config,
         output,
     )
+    if config.packer_enabled:
+        try:
+            from packer_automation import (
+                PackerAutomationError,
+                run_configured_packer,
+            )
+
+            package = run_configured_packer(output, config, config_path)
+            if package:
+                print(f"[合成] OUTPUT.LST 已就绪：{package}", flush=True)
+        except (ImportError, OSError, PackerAutomationError) as error:
+            raise ConverterAutomationError(f"音频文件合成失败：{error}") from error
     return output

@@ -2,11 +2,12 @@ import argparse
 import json
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest import mock
 
 import audio_processor
 import converter_automation
+import packer_automation
 
 
 class AudioProcessorTests(unittest.TestCase):
@@ -228,6 +229,8 @@ class AudioProcessorTests(unittest.TestCase):
             self.assertEqual(config.format, "F1A")
             self.assertEqual(config.sample_rate, "32K")
             self.assertEqual(config.bit_rate, "32K")
+            self.assertTrue(config.packer_enabled)
+            self.assertEqual(config.packer_output_name, "OUTPUT.LST")
 
             dragged_folder = root / "dragged"
             dragged_folder.mkdir()
@@ -616,6 +619,64 @@ class AudioProcessorTests(unittest.TestCase):
                     expected_count=1,
                     timeout=0.1,
                 )
+
+    def test_packer_tree_navigation_expands_each_path_component(self) -> None:
+        class Item:
+            def __init__(self, name: str, children: dict[str, "Item"] | None = None) -> None:
+                self.name = name
+                self.children_by_name = children or {}
+                self.expanded = False
+                self.selected = False
+
+            def text(self) -> str:
+                return self.name
+
+            def expand(self) -> None:
+                self.expanded = True
+
+            def get_child(self, name: str, exact: bool) -> "Item":
+                self.exact = exact
+                return self.children_by_name[name]
+
+            def children(self) -> list["Item"]:
+                return list(self.children_by_name.values())
+
+            def ensure_visible(self) -> None:
+                pass
+
+            def select(self) -> None:
+                self.selected = True
+
+        converted = Item("converted")
+        project = Item("au-one-set", {"converted": converted})
+        root = Item("D:\\", {"au-one-set": project})
+        tree = mock.Mock()
+        tree.roots.return_value = [root]
+        selected = packer_automation.navigate_tree_to_directory(
+            tree,
+            PureWindowsPath(r"D:\au-one-set\converted"),
+        )
+        self.assertIs(selected, converted)
+        self.assertTrue(root.expanded)
+        self.assertTrue(project.expanded)
+        self.assertTrue(converted.selected)
+        self.assertFalse(converted.expanded)
+
+    def test_packer_drive_selection_matches_volume_prefix(self) -> None:
+        combo = mock.Mock()
+        combo.item_texts.return_value = ["c: [系统]", "d: [软件]"]
+        window = mock.Mock()
+        window.descendants.return_value = [combo]
+        packer_automation._select_drive(window, "D:")
+        combo.select.assert_called_once_with(1)
+
+    def test_packer_success_requires_updated_output_lst(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "OUTPUT.LST"
+            output.write_bytes(b"old")
+            previous = packer_automation._signature(output)
+            output.write_bytes(b"new package")
+            packer_automation._wait_for_package(output, previous, timeout=0.1)
 
 
 if __name__ == "__main__":
