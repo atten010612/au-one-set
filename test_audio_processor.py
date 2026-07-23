@@ -324,6 +324,54 @@ class AudioProcessorTests(unittest.TestCase):
             forwarded_files = run_converter.call_args.args[0]
             self.assertEqual(forwarded_files, [output.resolve()])
 
+    def test_pywinauto_install_refreshes_pywin32_paths_in_current_process(self) -> None:
+        installed_module = object()
+        with (
+            mock.patch.object(
+                converter_automation.importlib,
+                "import_module",
+                side_effect=[ImportError("win32api"), installed_module, installed_module],
+            ) as import_module,
+            mock.patch.object(
+                converter_automation.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0),
+            ),
+            mock.patch.object(converter_automation.site, "getsitepackages", return_value=[]),
+            mock.patch.object(
+                converter_automation.site,
+                "getusersitepackages",
+                return_value="Z:/missing-site-packages",
+            ),
+        ):
+            converter_automation.ensure_pywinauto(auto_install=True)
+        self.assertEqual(import_module.call_count, 3)
+
+    def test_pywinauto_import_failure_requests_one_time_restart(self) -> None:
+        with (
+            mock.patch.object(
+                converter_automation.importlib,
+                "import_module",
+                side_effect=ImportError("win32api"),
+            ),
+            mock.patch.object(
+                converter_automation.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0),
+            ),
+            mock.patch.object(converter_automation.site, "getsitepackages", return_value=[]),
+            mock.patch.object(
+                converter_automation.site,
+                "getusersitepackages",
+                return_value="Z:/missing-site-packages",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                converter_automation.ConverterAutomationError,
+                "重新运行",
+            ):
+                converter_automation.ensure_pywinauto(auto_install=True)
+
 
 if __name__ == "__main__":
     unittest.main()

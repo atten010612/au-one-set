@@ -244,6 +244,10 @@ audio_processor_config.json
 `converted\converter-controls.txt` 保存识别到的控件信息。它不会使用
 固定屏幕坐标，因此正常情况下不受窗口位置和分辨率影响。
 
+第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
+Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
+加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。
+
 临时不运行转换工具：
 
 ```powershell

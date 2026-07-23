@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
+import site
 import subprocess
 import sys
 import time
@@ -144,8 +146,8 @@ def conversion_output_directory(
 
 def ensure_pywinauto(auto_install: bool) -> None:
     try:
-        import pywinauto  # noqa: F401
-
+        importlib.import_module("win32api")
+        importlib.import_module("pywinauto")
         return
     except ImportError:
         pass
@@ -167,6 +169,27 @@ def ensure_pywinauto(auto_install: bool) -> None:
         raise ConverterAutomationError(
             "pywinauto 安装失败。请联网后手动运行：" + " ".join(command)
         )
+    # pip installed pywin32 into the already-running interpreter. Its
+    # pywin32.pth file (which adds site-packages/win32 for win32api) is normally
+    # processed only at Python startup, so process it now before importing.
+    package_directories = list(site.getsitepackages())
+    user_site = site.getusersitepackages()
+    if isinstance(user_site, str):
+        package_directories.append(user_site)
+    for directory in package_directories:
+        if Path(directory).is_dir():
+            site.addsitedir(directory)
+    importlib.invalidate_caches()
+    sys.modules.pop("win32api", None)
+    sys.modules.pop("pywinauto", None)
+    try:
+        importlib.import_module("win32api")
+        importlib.import_module("pywinauto")
+    except ImportError as error:
+        raise ConverterAutomationError(
+            "自动化组件已安装，但当前 Python 进程尚未识别 win32api。"
+            "请关闭此窗口并重新运行“处理音频.bat”。"
+        ) from error
 
 
 def file_dialog_text(files: Iterable[Path]) -> str:
@@ -255,7 +278,14 @@ def automate_converter(
     config: ConverterConfig,
     diagnostics_directory: Path,
 ) -> None:
-    from pywinauto import Application, Desktop
+    try:
+        from pywinauto import Application, Desktop
+    except ImportError as error:
+        raise ConverterAutomationError(
+            "无法加载 Windows 自动化组件。请关闭窗口并重新运行 BAT；"
+            f"如果仍然失败，请执行：{sys.executable} -m pip install "
+            f"--force-reinstall pywin32 pywinauto=={PYWINAUTO_VERSION}"
+        ) from error
 
     diagnostics_directory.mkdir(parents=True, exist_ok=True)
     application = Application(backend="uia").start(
