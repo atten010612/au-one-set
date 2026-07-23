@@ -529,6 +529,45 @@ class AudioProcessorTests(unittest.TestCase):
         native_set.assert_called_once_with(edit, str(output_path))
         set_clipboard.assert_not_called()
 
+    def test_output_directory_uses_application_folder_picker_as_last_resort(self) -> None:
+        edit = mock.Mock()
+        edit.is_visible.return_value = True
+        edit.is_enabled.return_value = True
+        edit.rectangle.return_value.width.return_value = 600
+        window = mock.Mock()
+        window.descendants.return_value = [edit]
+        output_path = Path(r"D:\au-one-set\converted")
+        with (
+            mock.patch.object(
+                converter_automation,
+                "_native_set_window_text",
+                return_value=False,
+            ),
+            mock.patch.object(
+                converter_automation,
+                "_read_control_text",
+                return_value="",
+            ),
+            mock.patch.object(converter_automation, "_set_windows_clipboard"),
+            mock.patch.object(converter_automation, "_send_keys"),
+            mock.patch.object(
+                converter_automation,
+                "_choose_output_directory_with_dialog",
+            ) as choose_directory,
+        ):
+            converter_automation._set_output_directory(window, output_path)
+        choose_directory.assert_called_once_with(window, edit, output_path)
+
+    def test_folder_confirmation_button_is_selected_by_text(self) -> None:
+        button = mock.Mock()
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = True
+        button.window_text.return_value = " 选择文件夹 "
+        dialog = mock.Mock()
+        dialog.descendants.return_value = [button]
+        converter_automation._click_folder_confirmation(dialog)
+        button.click.assert_called_once_with()
+
     def test_conversion_success_requires_actual_output_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

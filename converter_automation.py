@@ -323,6 +323,72 @@ def _same_windows_path(actual: str, expected: str) -> bool:
     )
 
 
+def _click_folder_confirmation(dialog: Any) -> None:
+    buttons = _visible_controls(dialog, "Button")
+    preferred = (
+        "选择文件夹",
+        "选择此文件夹",
+        "确定",
+        "selectfolder",
+        "ok",
+    )
+    for expected in preferred:
+        for button in buttons:
+            title = "".join(button.window_text().split()).casefold()
+            if title == expected.casefold() or expected.casefold() in title:
+                button.click()
+                return
+    available = [
+        " ".join(button.window_text().split())
+        for button in buttons
+        if button.window_text().strip()
+    ]
+    raise ConverterAutomationError(
+        "文件夹选择窗口没有找到“选择文件夹/确定”按钮；"
+        f"可见按钮：{available}"
+    )
+
+
+def _wait_for_directory_value(
+    edit: Any,
+    expected: str,
+    timeout: float = 10,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _same_windows_path(_read_control_text(edit), expected):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def _choose_output_directory_with_dialog(
+    window: Any,
+    edit: Any,
+    output_directory: Path,
+) -> None:
+    from pywinauto import Desktop
+
+    desktop = Desktop(backend="uia")
+    previous_handles = _window_handles(window, desktop)
+    _click_button(window, "打开")
+    dialog = _find_new_dialog(window, desktop, previous_handles)
+    dialog.set_focus()
+    _set_windows_clipboard(str(output_directory))
+    _send_keys("^l")
+    _send_keys("^a")
+    _send_keys("^v")
+    _send_keys("{ENTER}")
+    time.sleep(0.5)
+    _click_folder_confirmation(dialog)
+    if not _wait_for_directory_value(edit, str(output_directory)):
+        actual = _read_control_text(edit)
+        raise ConverterAutomationError(
+            "通过“打开”选择目录后校验失败："
+            f"期望 {str(output_directory)!r}，控件实际值 {actual!r}"
+        )
+
+
 def _set_output_directory(window: Any, output_directory: Path) -> None:
     edits = _visible_controls(window, "Edit")
     if not edits:
@@ -350,10 +416,13 @@ def _set_output_directory(window: Any, output_directory: Path) -> None:
     _send_keys("{TAB}")
     time.sleep(0.2)
     actual = _read_control_text(edit)
-    if not _same_windows_path(actual, expected):
-        raise ConverterAutomationError(
-            f"保存目录校验失败：期望 {expected!r}，控件实际值 {actual!r}"
-        )
+    if _same_windows_path(actual, expected):
+        return
+
+    # This build ignores all direct writes. Use its own folder picker so the
+    # application updates its internal output-directory state as well as the
+    # visible text.
+    _choose_output_directory_with_dialog(window, edit, output_directory)
 
 
 def _window_handles(window: Any, desktop: Any) -> set[int]:
