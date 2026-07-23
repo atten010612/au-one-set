@@ -24,6 +24,30 @@ class AudioProcessorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             audio_processor.normalized_plan_steps("compress")
 
+    def test_audio_output_filename_removes_all_whitespace(self) -> None:
+        self.assertEqual(
+            audio_processor.filename_without_spaces(
+                "03 [蓝牙连接]\tAPP 已连接.wav"
+            ),
+            "03[蓝牙连接]APP已连接.wav",
+        )
+
+    def test_existing_audio_rename_avoids_space_removal_collisions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spaced = root / "a b.wav"
+            existing = root / "ab.wav"
+            spaced.touch()
+            existing.touch()
+            normalized = audio_processor.normalize_existing_audio_filenames(
+                [spaced, existing]
+            )
+            self.assertEqual(
+                [path.name for path in normalized],
+                ["ab_1.wav", "ab.wav"],
+            )
+            self.assertFalse(spaced.exists())
+
     def test_plan_supports_utf8_bom_and_filename_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

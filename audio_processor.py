@@ -155,7 +155,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("0", "1", "2", "3", "4"),
         help="流程模式：0全部，1仅处理，2转换并合成，3仅转换，4仅合成",
     )
-    parser.add_argument("--version", action="version", version="audio-processor 1.5.0")
+    parser.add_argument("--version", action="version", version="audio-processor 1.6.0")
     args = parser.parse_args(argv)
 
     if args.workers < 1:
@@ -322,6 +322,44 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def filename_without_spaces(name: str) -> str:
+    path = Path(name)
+    stem = re.sub(r"\s+", "", path.stem) or "audio"
+    return f"{stem}{path.suffix}"
+
+
+def normalize_existing_audio_filenames(paths: Sequence[Path]) -> list[Path]:
+    normalized: list[Path] = []
+    reserved = {
+        str(path.resolve()).casefold()
+        for path in paths
+        if path.is_file() and filename_without_spaces(path.name) == path.name
+    }
+    for source in paths:
+        source = source.resolve()
+        desired_name = filename_without_spaces(source.name)
+        if desired_name == source.name:
+            normalized.append(source)
+            continue
+        desired = source.with_name(desired_name)
+        candidate = desired
+        index = 1
+        while (
+            str(candidate.resolve()).casefold() in reserved
+            or (candidate.exists() and candidate.resolve() != source)
+        ):
+            candidate = desired.with_name(
+                f"{desired.stem}_{index}{desired.suffix}"
+            )
+            index += 1
+        source.rename(candidate)
+        resolved = candidate.resolve()
+        reserved.add(str(resolved).casefold())
+        log(f"[重命名] {source.name} → {resolved.name}")
+        normalized.append(resolved)
+    return normalized
 
 
 def normalized_plan_steps(value: str) -> set[str]:
@@ -500,7 +538,8 @@ def load_reports(output_dirs: Iterable[Path]) -> dict[str, dict[str, Any]]:
 
 def choose_output(source: Path, directory: Path, overwrite: bool) -> Path:
     with OUTPUT_LOCK:
-        target = directory / source.name
+        sanitized_name = filename_without_spaces(source.name)
+        target = directory / sanitized_name
         key = str(target.resolve()).casefold()
         is_source = target.resolve() == source.resolve()
         if (
@@ -512,7 +551,9 @@ def choose_output(source: Path, directory: Path, overwrite: bool) -> Path:
             return target
         index = 1
         while True:
-            candidate = directory / f"{source.stem}_{index}{source.suffix}"
+            candidate = directory / (
+                f"{Path(sanitized_name).stem}_{index}{source.suffix}"
+            )
             key = str(candidate.resolve()).casefold()
             if key not in RESERVED_OUTPUTS and not candidate.exists():
                 RESERVED_OUTPUTS.add(key)
@@ -975,7 +1016,7 @@ def write_reports(
             serialized_result = asdict(result)
             merged[result_key(serialized_result)] = serialized_result
         payload = {
-            "version": "1.5.0",
+            "version": "1.6.0",
             "generated_at": generated_at,
             "settings": {
                 "target_lufs": args.target_lufs,
@@ -1024,6 +1065,7 @@ def run_converter_after_processing(
             if path.is_file() and key not in seen:
                 seen.add(key)
                 outputs.append(path)
+        outputs = normalize_existing_audio_filenames(outputs)
         converted_directory = run_configured_converter(
             outputs,
             args.inputs,
@@ -1062,6 +1104,7 @@ def run_conversion_from_existing_audio(
     if not files:
         log("没有找到可用于转换的现有音频文件。")
         return 1
+    files = normalize_existing_audio_filenames(files)
     log(f"找到 {len(files)} 个现有音频文件，跳过音频处理。")
     results = [
         Result(
@@ -1105,6 +1148,19 @@ def run_packer_from_existing_conversion(args: argparse.Namespace) -> int:
             script_directory,
             config.output_folder_name,
         )
+        converted_audio = [
+            path
+            for path in source.iterdir()
+            if path.is_file() and path.suffix.lower() in {
+                ".a",
+                ".e",
+                ".f1a",
+                ".f1b",
+                ".f1c",
+                ".ump3",
+            }
+        ]
+        normalize_existing_audio_filenames(converted_audio)
         ensure_pywinauto(config.auto_install_pywinauto)
         config.packer_enabled = True
         package = run_configured_packer(source, config, config_path)
