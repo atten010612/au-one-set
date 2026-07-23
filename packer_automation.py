@@ -97,7 +97,12 @@ def _find_directory_list(window: Any) -> Any:
 def _matches_directory_component(item_text: str, component: str) -> bool:
     cleaned = item_text.strip().strip("[]").rstrip("\\/")
     basename = ntpath.basename(cleaned) or cleaned
-    return basename.casefold() == component.casefold()
+    expected = component.strip().strip("[]").rstrip("\\/")
+    expected_basename = ntpath.basename(expected) or expected
+    return (
+        basename.casefold() == expected_basename.casefold()
+        or cleaned.casefold() == expected.casefold()
+    )
 
 
 def _activate_directory_selection(directory_list: Any) -> None:
@@ -135,25 +140,51 @@ def _activate_directory_selection(directory_list: Any) -> None:
         ) from error
 
 
-def navigate_directory_list(window: Any, directory: Path) -> None:
-    directory_list = _find_directory_list(window)
-    for component in directory.parts[1:]:
+def _directory_item_index(
+    directory_list: Any,
+    component: str,
+    timeout: float = 3,
+) -> tuple[int, list[str]]:
+    deadline = time.monotonic() + timeout
+    last_items: list[str] = []
+    while time.monotonic() < deadline:
         try:
-            items = directory_list.item_texts()
+            last_items = directory_list.item_texts()
         except Exception as error:
             raise PackerAutomationError(f"无法读取目录列表：{error}") from error
         matches = [
             index
-            for index, text in enumerate(items)
+            for index, text in enumerate(last_items)
             if _matches_directory_component(text, component)
         ]
-        if not matches:
-            raise PackerAutomationError(
-                f"目录列表中没有找到 {component!r}；可见项：{items}"
-            )
-        directory_list.select(matches[-1])
-        _activate_directory_selection(directory_list)
+        if matches:
+            return matches[-1], last_items
         time.sleep(0.2)
+    raise PackerAutomationError(
+        f"目录列表中没有找到 {component!r}；可见项：{last_items}"
+    )
+
+
+def _reset_directory_list_to_drive_root(
+    directory_list: Any,
+    drive: str,
+) -> None:
+    clean_drive = drive.rstrip("\\/")
+    root_name = clean_drive + "\\"
+    index, _ = _directory_item_index(directory_list, root_name)
+    directory_list.select(index)
+    _activate_directory_selection(directory_list)
+    time.sleep(0.3)
+
+
+def navigate_directory_list(window: Any, directory: Path) -> None:
+    directory_list = _find_directory_list(window)
+    _reset_directory_list_to_drive_root(directory_list, directory.drive)
+    for component in directory.parts[1:]:
+        index, _ = _directory_item_index(directory_list, component)
+        directory_list.select(index)
+        _activate_directory_selection(directory_list)
+        time.sleep(0.3)
     try:
         selected = directory_list.selected_text()
     except Exception:

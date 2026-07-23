@@ -955,7 +955,9 @@ class AudioProcessorTests(unittest.TestCase):
 
             def item_texts(self) -> list[str]:
                 if self.stage == 0:
-                    return ["D:\\", "au-one-set", "cursor"]
+                    return ["D:\\", "project", "g5-1", "g5-2-belt"]
+                if self.stage == 1:
+                    return ["D:\\", "au-one-set", "cursor", "project"]
                 return ["D:\\", "au-one-set", "converted"]
 
             def select(self, index: int) -> None:
@@ -976,7 +978,7 @@ class AudioProcessorTests(unittest.TestCase):
             PureWindowsPath(r"D:\au-one-set\converted"),
         )
         self.assertEqual(directory_list.selected, "converted")
-        self.assertEqual(directory_list.stage, 2)
+        self.assertEqual(directory_list.stage, 3)
 
     def test_packer_save_uses_delphi_bit_button_message(self) -> None:
         save = mock.Mock()
