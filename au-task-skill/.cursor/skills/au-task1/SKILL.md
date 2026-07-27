@@ -6,7 +6,8 @@ disable-model-invocation: true
 
 # AU Task 1：仅转换
 
-仅使用全局 MCP `audio-workflow`，不要改用 Shell 或自行操作GUI。
+仅使用本套件的 MCP `au-task-workflow`，不要依赖外部 `audio-workflow`，
+也不要改用 Shell 或自行操作GUI。
 
 1. 收集用户本次消息拖入或 `@` 附加的音频文件、`processed` 文件夹或其
    父目录。没有明确路径时要求用户先提供，不要猜测。

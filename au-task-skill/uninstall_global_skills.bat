@@ -1,12 +1,14 @@
 @echo off
 setlocal
+cd /d "%~dp0"
 
-set "TARGET=%USERPROFILE%\.cursor\skills"
-if exist "%TARGET%\au-task0" rmdir /S /Q "%TARGET%\au-task0"
-if exist "%TARGET%\au-task1" rmdir /S /Q "%TARGET%\au-task1"
-if exist "%TARGET%\au-task2" rmdir /S /Q "%TARGET%\au-task2"
-reg delete "HKCU\Environment" /V AU_TASK_SKILL_HOME /F >nul 2>nul
+if exist ".venv\Scripts\python.exe" goto uninstall_with_venv
+py -3 "install_cursor.py" uninstall
+goto done
 
-echo AU Task skills were removed.
-echo Reload the Cursor window to refresh the command list.
+:uninstall_with_venv
+".venv\Scripts\python.exe" "install_cursor.py" uninstall
+
+:done
+echo Reload the Cursor window to refresh MCP and Skills.
 pause

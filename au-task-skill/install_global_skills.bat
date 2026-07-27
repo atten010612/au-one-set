@@ -2,25 +2,34 @@
 setlocal
 cd /d "%~dp0"
 
-for %%I in ("%~dp0.") do set "SKILL_HOME=%%~fI"
-set "TARGET=%USERPROFILE%\.cursor\skills"
-if not exist "%TARGET%" mkdir "%TARGET%"
+py -3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>nul
+if not errorlevel 1 goto create_with_py
 
-xcopy ".cursor\skills\au-task0" "%TARGET%\au-task0" /E /I /Y >nul
+python -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>nul
+if not errorlevel 1 goto create_with_python
+
+echo Python 3.10 or newer was not found.
+goto failed
+
+:create_with_py
+py -3 -m venv ".venv"
 if errorlevel 1 goto failed
-xcopy ".cursor\skills\au-task1" "%TARGET%\au-task1" /E /I /Y >nul
-if errorlevel 1 goto failed
-xcopy ".cursor\skills\au-task2" "%TARGET%\au-task2" /E /I /Y >nul
+goto install_dependencies
+
+:create_with_python
+python -m venv ".venv"
 if errorlevel 1 goto failed
 
-setx AU_TASK_SKILL_HOME "%SKILL_HOME%" >nul
+:install_dependencies
+".venv\Scripts\python.exe" -m pip install --upgrade pip
+if errorlevel 1 goto failed
+".venv\Scripts\python.exe" -m pip install -r "requirements.txt"
+if errorlevel 1 goto failed
+".venv\Scripts\python.exe" "install_cursor.py" install
 if errorlevel 1 goto failed
 
-echo AU Task skills were installed globally:
-echo   /au-task0  convert and package
-echo   /au-task1  convert only
-echo   /au-task2  package only
-echo Vendor home: %SKILL_HOME%
+echo.
+echo AU Task standalone MCP and Skills were installed.
 echo Reload the Cursor window before use.
 pause
 exit /b 0

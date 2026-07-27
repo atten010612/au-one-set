@@ -1,8 +1,8 @@
 # AU Task Cursor Skills
 
-这是一个可独立发布的 Cursor Skills 项目，仅提供杰理音频转换和打包入口。
-实际执行由已经全局安装的 `audio-workflow` MCP 完成，不复制GUI自动化
-代码。杰理软件统一放在本 Skill 仓库的 `vendor` 中。
+这是一个可独立发布的 Cursor Skills + MCP 套件，只提供杰理音频转换和
+打包功能。GUI自动化、任务队列、进度、取消和环境检查均位于本仓库的
+`runtime`，不再依赖外部 `audio-workflow` 工程。
 
 ## 软件目录
 
@@ -10,6 +10,16 @@
 
 ```text
 au-task-skill\
+├── .cursor\skills\
+├── runtime\
+│   ├── au_task.py
+│   ├── mcp_server.py
+│   ├── converter_runtime.py
+│   └── packer_runtime.py
+├── audio_processor_config.json
+├── requirements.txt
+├── install_cursor.py
+├── install_global_skills.bat
 └── vendor\
     ├── converter\
     │   ├── 音频文件转换工具_1.2.2.exe
@@ -35,19 +45,14 @@ au-task-skill\
 
 ## 前置条件
 
-Cursor 中必须已经全局配置并连接：
+电脑只需安装 Python 3.10或更高版本，并按上方结构放好杰理工具。安装
+完成后 Cursor 中会出现独立 MCP：
 
 ```text
-audio-workflow
+au-task-workflow
 ```
 
-可让 Cursor 调用：
-
-```text
-check_audio_environment
-```
-
-确认所需工具存在。此 Skills 仓库本身不包含 FFmpeg或杰理软件。
+可调用 `check_audio_environment` 验证。转换和打包不使用 FFmpeg。
 
 ## 全局安装
 
@@ -57,22 +62,18 @@ check_audio_environment
 install_global_skills.bat
 ```
 
-它会复制到：
+安装器会：
 
 ```text
-%USERPROFILE%\.cursor\skills\au-task0
-%USERPROFILE%\.cursor\skills\au-task1
-%USERPROFILE%\.cursor\skills\au-task2
+1. 在本仓库建立 .venv
+2. 安装 FastMCP 和 pywinauto
+3. 将三个 Skill 复制到 %USERPROFILE%\.cursor\skills
+4. 安全合并 %USERPROFILE%\.cursor\mcp.json
+5. 注册 au-task-workflow MCP
 ```
 
-安装器还会设置当前 Windows 用户环境变量：
-
-```text
-AU_TASK_SKILL_HOME=本au-task-skill目录的绝对路径
-```
-
-全局 `audio-workflow` MCP 通过这个变量调用本仓库内的 EXE。移动本仓库
-后必须重新运行安装器并 Reload Cursor。
+现有全局 MCP 配置会保留，并在修改前备份为 `mcp.json.backup`。移动本
+仓库后必须重新运行安装器，让全局MCP指向新位置。
 
 然后在 Cursor 中执行：
 
