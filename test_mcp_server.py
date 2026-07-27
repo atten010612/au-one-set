@@ -68,6 +68,14 @@ class MCPServerTests(unittest.TestCase):
             self.assertEqual(result["input_paths"], [str(source.resolve())])
             manager.cancel(result["job_id"])
 
+    def test_environment_check_reports_all_portable_tools(self) -> None:
+        result = mcp_server.check_environment()
+        self.assertIn("ffmpeg", result["checks"])
+        self.assertIn("converter_path", result["checks"])
+        self.assertIn("packer_path", result["checks"])
+        self.assertIn("packres.exe", result["checks"])
+        self.assertIn("new_packres.bat", result["checks"])
+
 
 if __name__ == "__main__":
     unittest.main()

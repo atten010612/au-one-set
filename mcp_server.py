@@ -376,13 +376,22 @@ def check_environment() -> dict[str, Any]:
         config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception:
         pass
+    resolved_config_paths: dict[str, Path] = {}
     for key in ("converter_path", "packer_path", "packres_input_directory"):
         value = config.get(key)
         if value:
             path = Path(value)
             if not path.is_absolute():
                 path = PROJECT_ROOT / path
+            resolved_config_paths[key] = path
             expected[key] = path
+    test_dir = resolved_config_paths.get("packres_input_directory")
+    if test_dir:
+        expected["packres.exe"] = test_dir / "packres.exe"
+        expected["new_packres.bat"] = test_dir / config.get(
+            "packres_batch_name",
+            "new_packres.bat",
+        )
     checks = {
         name: {
             "path": str(path.resolve()),
