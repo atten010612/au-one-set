@@ -126,7 +126,40 @@ check_audio_environment
 
 取消时尚未写完的单个输出可能需要人工删除。
 
-## 5. 相对路径与换电脑
+## 5. Cursor斜杠命令
+
+项目包含：
+
+```text
+.cursor\commands\音频处理0.md
+.cursor\commands\音频处理1.md
+.cursor\commands\音频处理2.md
+.cursor\commands\音频处理3.md
+.cursor\commands\音频处理4.md
+```
+
+重新加载 Cursor 后可以在 Agent 对话中使用：
+
+```text
+/音频处理0 @语音文件夹
+/音频处理1 @input.wav
+/音频处理2 @processed
+/音频处理3 @processed
+/音频处理4 @converted
+```
+
+没有 `@` 附加路径时，命令会让 MCP 使用项目根目录。命令会自动进行环境
+检查、启动正确模式、轮询进度并汇报产物，不需要手动调用5个MCP工具。
+
+Cursor 当前文档没有正式保证所有版本都支持中文命令名。如果命令列表中
+没有显示中文名称，可以直接从 `.cursor\commands` 打开对应 Markdown，
+或者复制为ASCII文件名，例如：
+
+```text
+audio-process-0.md → /audio-process-0
+```
+
+## 6. 相对路径与换电脑
 
 `audio_processor_config.json` 使用相对路径：
 
@@ -143,7 +176,7 @@ check_audio_environment
 
 若工具没有放在项目内，也可以把对应字段改为绝对路径。
 
-## 6. 运行前检查
+## 7. 运行前检查
 
 让 Cursor 调用：
 

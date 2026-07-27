@@ -76,6 +76,16 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("packres.exe", result["checks"])
         self.assertIn("new_packres.bat", result["checks"])
 
+    def test_cursor_slash_commands_map_to_all_workflow_steps(self) -> None:
+        commands = Path(__file__).resolve().parent / ".cursor" / "commands"
+        for step in range(5):
+            command = commands / f"音频处理{step}.md"
+            self.assertTrue(command.is_file(), command)
+            content = command.read_text(encoding="utf-8")
+            self.assertIn(f'"workflow_step": {step}', content)
+            self.assertIn("start_audio_workflow", content)
+            self.assertIn("get_audio_workflow_status", content)
+
 
 if __name__ == "__main__":
     unittest.main()
