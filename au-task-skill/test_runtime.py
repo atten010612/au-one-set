@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parent
@@ -9,6 +10,7 @@ RUNTIME = ROOT / "runtime"
 sys.path.insert(0, str(RUNTIME))
 
 import au_task  # noqa: E402
+import install_cursor  # noqa: E402
 import mcp_server  # noqa: E402
 
 
@@ -52,6 +54,49 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("pRFiles", result["checks"])
         self.assertIn("packres.exe", result["checks"])
         self.assertIn("new_packres.bat", result["checks"])
+
+    def test_installer_preserves_other_global_mcp_servers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "skill"
+            cursor_home = Path(directory) / ".cursor"
+            (root / ".venv" / "Scripts").mkdir(parents=True)
+            (root / ".venv" / "Scripts" / "python.exe").touch()
+            (root / "runtime").mkdir()
+            (root / "runtime" / "mcp_server.py").touch()
+            for name in install_cursor.SKILL_NAMES:
+                skill = root / ".cursor" / "skills" / name
+                skill.mkdir(parents=True)
+                (skill / "SKILL.md").write_text(name, encoding="utf-8")
+            cursor_home.mkdir()
+            mcp_config = cursor_home / "mcp.json"
+            mcp_config.write_text(
+                '{"mcpServers":{"other":{"command":"other.exe"}}}',
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(install_cursor, "ROOT", root),
+                mock.patch.object(install_cursor, "CURSOR_HOME", cursor_home),
+                mock.patch.object(install_cursor, "GLOBAL_MCP", mcp_config),
+                mock.patch.object(
+                    install_cursor,
+                    "GLOBAL_SKILLS",
+                    cursor_home / "skills",
+                ),
+            ):
+                install_cursor.install()
+                installed = install_cursor.read_mcp_config()
+                self.assertIn("other", installed["mcpServers"])
+                self.assertIn(
+                    "au-task-workflow",
+                    installed["mcpServers"],
+                )
+                install_cursor.uninstall()
+                removed = install_cursor.read_mcp_config()
+                self.assertIn("other", removed["mcpServers"])
+                self.assertNotIn(
+                    "au-task-workflow",
+                    removed["mcpServers"],
+                )
 
 
 if __name__ == "__main__":
