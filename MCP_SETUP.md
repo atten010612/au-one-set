@@ -1,0 +1,143 @@
+# Cursor MCP 安装与软件放置
+
+本 MCP 运行在本地 Windows Cursor 桌面会话中。不要从 WSL、SSH、
+Dev Container 或锁屏会话启动，因为杰理工具需要可交互桌面。
+
+## 1. 建立完整目录
+
+下载代码后保持以下结构：
+
+```text
+audio-workflow\
+├── .cursor\
+│   └── mcp.json
+├── audio_processor.py
+├── converter_automation.py
+├── packer_automation.py
+├── mcp_server.py
+├── audio_processor_config.json
+├── requirements-mcp.txt
+├── setup_mcp.bat
+├── tools\
+│   ├── ffmpeg.exe
+│   └── ffprobe.exe
+└── vendor\
+    ├── converter\
+    │   ├── 音频文件转换工具_1.2.2.exe
+    │   └── 该软件原有的其他文件和子目录
+    └── ad140\
+        ├── packres\
+        │   ├── pRFiles.exe
+        │   └── pRFiles原有的其他文件和子目录
+        └── test_dir\
+            ├── packres.exe
+            └── new_packres.bat
+```
+
+不要把工具原文件夹再套一层。例如以下路径是错误的：
+
+```text
+vendor\converter\音频转换工具文件夹\音频文件转换工具_1.2.2.exe
+```
+
+EXE 必须直接位于上图指定的位置。
+
+`new_packres.bat` 必须删除 `pause`，推荐内容：
+
+```bat
+@echo off
+cd /d "%~dp0"
+packres.exe -n test_dir -list OUTPUT.LST -o dir_music -normal
+exit /b %errorlevel%
+```
+
+## 2. 安装 MCP Python 环境
+
+电脑需要 Python 3.10 或更高版本。双击：
+
+```text
+setup_mcp.bat
+```
+
+它会建立项目内的 `.venv`，并安装固定版本：
+
+```text
+fastmcp 3.4.4
+pywinauto 0.6.9
+```
+
+安装结束后在 Cursor 执行 “Developer: Reload Window”。
+
+## 3. Cursor MCP 工具
+
+项目级配置已经位于 `.cursor\mcp.json`。MCP 名称为
+`audio-workflow`，提供：
+
+```text
+start_audio_workflow
+get_audio_workflow_status
+cancel_audio_workflow
+list_audio_workflows
+check_audio_environment
+```
+
+启动示例：
+
+```json
+{
+  "input_paths": ["D:\\语音项目"],
+  "workflow_step": 0
+}
+```
+
+流程值：
+
+```text
+0：音频处理 → 转换 → 合成
+1：仅音频处理
+2：转换 → 合成
+3：仅转换
+4：仅合成
+```
+
+`start_audio_workflow` 会立即返回 `job_id`。使用
+`get_audio_workflow_status` 查询阶段、百分比、文件数量、日志和产物。
+
+## 4. 排队与取消
+
+杰理 GUI 工具不能安全地并行操作，因此音频任务一次只运行一个，后续
+任务处于 `queued`。这不会阻塞 Cursor 的聊天、编辑或其他 MCP。
+
+`cancel_audio_workflow` 会：
+
+1. 将排队任务标记为取消；或
+2. 终止运行中的工作进程及其启动的 GUI 子进程。
+
+取消时尚未写完的单个输出可能需要人工删除。
+
+## 5. 相对路径与换电脑
+
+`audio_processor_config.json` 使用相对路径：
+
+```json
+{
+  "converter_path": "vendor\\converter\\音频文件转换工具_1.2.2.exe",
+  "packer_path": "vendor\\ad140\\packres\\pRFiles.exe",
+  "packres_input_directory": "vendor\\ad140\\test_dir"
+}
+```
+
+所有路径均以配置文件所在目录为基准。复制整个 `audio-workflow` 文件夹
+到另一台 Windows 电脑后，不需要修改 C盘/D盘路径。
+
+若工具没有放在项目内，也可以把对应字段改为绝对路径。
+
+## 6. 运行前检查
+
+让 Cursor 调用：
+
+```text
+check_audio_environment
+```
+
+只有 `ready: true` 时再启动完整流程。缺失文件会在 `missing` 中列出。

@@ -1,5 +1,9 @@
 # Windows 语音批处理工具
 
+Cursor MCP 安装、目录结构、任务进度和取消功能请阅读
+[`MCP_SETUP.md`](MCP_SETUP.md)。项目已包含 `.cursor/mcp.json`、
+`mcp_server.py` 和 `setup_mcp.bat`。
+
 这是一个可以直接投入使用的 FFmpeg 批处理脚本，适用于短促的纯人声提示音。它会：
 
 1. 降低稳定底噪；

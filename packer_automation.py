@@ -45,6 +45,8 @@ def resolve_packer_executable(
     config_path: Path,
 ) -> Path:
     configured = Path(config.packer_path).expanduser() if config.packer_path else None
+    if configured and not configured.is_absolute():
+        configured = config_path.parent / configured
     if configured and configured.is_file():
         return configured.resolve()
     selected = choose_packer_executable()
@@ -639,4 +641,9 @@ def run_configured_packer(
         print("[合成] 当前不是 Windows，已跳过 AD140 打包工具。", flush=True)
         return None
     executable = resolve_packer_executable(config, config_path)
+    configured_input = Path(config.packres_input_directory).expanduser()
+    if not configured_input.is_absolute():
+        config.packres_input_directory = str(
+            (config_path.parent / configured_input).resolve()
+        )
     return automate_packer(executable, source_directory.resolve(), config)

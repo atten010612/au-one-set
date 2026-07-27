@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "converter_path": "D:\\soft\\语音烧录\\杰理音频转换工具\\AD140音频转换工具\\media_convert_tools\\convert_to_.f1a.f1b.ump3.a.b.e\\音频文件转换工具_1.2.2.exe",
+  "converter_path": "vendor\\converter\\音频文件转换工具_1.2.2.exe",
   "format": "F1A",
   "sample_rate": "32K",
   "bit_rate": "32K",
@@ -11,11 +11,11 @@
   "startup_timeout_seconds": 20,
   "conversion_timeout_seconds": 120,
   "packer_enabled": true,
-  "packer_path": "D:\\soft\\语音烧录\\杰理音频转换工具\\AD140打包工具\\packres\\pRFiles.exe",
+  "packer_path": "vendor\\ad140\\packres\\pRFiles.exe",
   "packer_window_title_regex": ".*调整文件顺序.*",
   "packer_output_name": "OUTPUT.LST",
   "packer_timeout_seconds": 30,
-  "packres_input_directory": "D:\\soft\\语音烧录\\杰理音频转换工具\\test_dir",
+  "packres_input_directory": "vendor\\ad140\\test_dir",
   "packres_batch_name": "new_packres.bat",
   "packres_output_name": "dir_music",
   "packres_timeout_seconds": 60

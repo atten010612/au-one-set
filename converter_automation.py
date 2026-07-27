@@ -147,6 +147,8 @@ def resolve_converter_executable(
     config_path: Path,
 ) -> Path:
     configured = Path(config.converter_path).expanduser() if config.converter_path else None
+    if configured and not configured.is_absolute():
+        configured = config_path.parent / configured
     if configured and configured.is_file():
         return configured.resolve()
     selected = choose_converter_executable()

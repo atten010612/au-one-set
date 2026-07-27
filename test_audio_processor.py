@@ -354,6 +354,37 @@ class AudioProcessorTests(unittest.TestCase):
             )
             self.assertEqual(processed_output, root / "converted")
 
+    def test_vendor_executable_paths_resolve_relative_to_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            converter = root / "vendor" / "converter" / "converter.exe"
+            packer = root / "vendor" / "ad140" / "packres" / "pRFiles.exe"
+            converter.parent.mkdir(parents=True)
+            packer.parent.mkdir(parents=True)
+            converter.touch()
+            packer.touch()
+            config_path = root / "audio_processor_config.json"
+            config = converter_automation.ConverterConfig(
+                converter_path=r"vendor\converter\converter.exe",
+                packer_path=r"vendor\ad140\packres\pRFiles.exe",
+            )
+            # Use platform separators for this cross-platform unit test.
+            config.converter_path = str(Path("vendor") / "converter" / "converter.exe")
+            config.packer_path = str(
+                Path("vendor") / "ad140" / "packres" / "pRFiles.exe"
+            )
+            self.assertEqual(
+                converter_automation.resolve_converter_executable(
+                    config,
+                    config_path,
+                ),
+                converter,
+            )
+            self.assertEqual(
+                packer_automation.resolve_packer_executable(config, config_path),
+                packer,
+            )
+
     def test_converter_file_dialog_text_supports_unicode_paths(self) -> None:
         paths = [Path(r"D:\提示音\开始.wav"), Path(r"D:\提示音\结束.wav")]
         value = converter_automation.file_dialog_text(paths)
