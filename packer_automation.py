@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -18,6 +19,15 @@ class PackerAutomationError(RuntimeError):
 
 
 PACKED_AUDIO_EXTENSIONS = {".a", ".e", ".f1a", ".f1b", ".f1c", ".ump3"}
+
+
+def expand_environment_path(value: str) -> Path:
+    expanded = re.sub(
+        r"%([^%]+)%",
+        lambda match: os.environ.get(match.group(1), match.group(0)),
+        value,
+    )
+    return Path(os.path.expandvars(expanded)).expanduser()
 
 
 def choose_packer_executable() -> Path | None:
@@ -44,7 +54,11 @@ def resolve_packer_executable(
     config: Any,
     config_path: Path,
 ) -> Path:
-    configured = Path(config.packer_path).expanduser() if config.packer_path else None
+    configured = (
+        expand_environment_path(config.packer_path)
+        if config.packer_path
+        else None
+    )
     if configured and not configured.is_absolute():
         configured = config_path.parent / configured
     if configured and configured.is_file():
@@ -641,7 +655,7 @@ def run_configured_packer(
         print("[合成] 当前不是 Windows，已跳过 AD140 打包工具。", flush=True)
         return None
     executable = resolve_packer_executable(config, config_path)
-    configured_input = Path(config.packres_input_directory).expanduser()
+    configured_input = expand_environment_path(config.packres_input_directory)
     if not configured_input.is_absolute():
         config.packres_input_directory = str(
             (config_path.parent / configured_input).resolve()

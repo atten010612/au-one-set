@@ -21,26 +21,30 @@ audio-workflow\
 ├── tools\
 │   ├── ffmpeg.exe（可选）
 │   └── ffprobe.exe（可选）
-└── vendor\
-    ├── converter\
-    │   ├── 音频文件转换工具_1.2.2.exe
-    │   └── 该软件原有的其他文件和子目录
-    └── ad140\
-        ├── packres\
-        │   ├── pRFiles.exe
-        │   └── pRFiles原有的其他文件和子目录
-        └── test_dir\
-            ├── packres.exe
-            └── new_packres.bat
+└── au-task-skill\（也可以放在其他固定位置）
+    └── vendor\
+        ├── converter\
+        │   ├── 音频文件转换工具_1.2.2.exe
+        │   └── 该软件原有的其他文件和子目录
+        └── ad140\
+            ├── packres\
+            │   ├── pRFiles.exe
+            │   └── pRFiles原有的其他文件和子目录
+            └── test_dir\
+                ├── packres.exe
+                └── new_packres.bat
 ```
 
 不要把工具原文件夹再套一层。例如以下路径是错误的：
 
 ```text
-vendor\converter\音频转换工具文件夹\音频文件转换工具_1.2.2.exe
+au-task-skill\vendor\converter\音频转换工具文件夹\音频文件转换工具_1.2.2.exe
 ```
 
-EXE 必须直接位于上图指定的位置。
+EXE 必须直接位于上图指定的位置。运行
+`au-task-skill\install_global_skills.bat` 会设置
+`AU_TASK_SKILL_HOME` 环境变量。移动 Skill 文件夹后需要重新运行安装器并
+Reload Cursor。
 
 `new_packres.bat` 必须删除 `pause`，推荐内容：
 
@@ -161,18 +165,19 @@ audio-process-0.md → /audio-process-0
 
 ## 6. 相对路径与换电脑
 
-`audio_processor_config.json` 使用相对路径：
+`audio_processor_config.json` 使用 Skill目录环境变量：
 
 ```json
 {
-  "converter_path": "vendor\\converter\\音频文件转换工具_1.2.2.exe",
-  "packer_path": "vendor\\ad140\\packres\\pRFiles.exe",
-  "packres_input_directory": "vendor\\ad140\\test_dir"
+  "converter_path": "%AU_TASK_SKILL_HOME%\\vendor\\converter\\音频文件转换工具_1.2.2.exe",
+  "packer_path": "%AU_TASK_SKILL_HOME%\\vendor\\ad140\\packres\\pRFiles.exe",
+  "packres_input_directory": "%AU_TASK_SKILL_HOME%\\vendor\\ad140\\test_dir"
 }
 ```
 
-所有路径均以配置文件所在目录为基准。复制整个 `audio-workflow` 文件夹
-到另一台 Windows 电脑后，不需要修改 C盘/D盘路径。
+`install_global_skills.bat` 会把 `AU_TASK_SKILL_HOME` 设置为 Skill仓库
+绝对路径。复制到另一台 Windows 电脑后，重新运行该安装器即可，不需要
+修改 C盘/D盘路径。
 
 若工具没有放在项目内，也可以把对应字段改为绝对路径。
 

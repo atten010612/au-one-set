@@ -385,6 +385,42 @@ class AudioProcessorTests(unittest.TestCase):
                 packer,
             )
 
+    def test_vendor_paths_expand_au_task_skill_home(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            converter = root / "vendor" / "converter" / "converter.exe"
+            packer = root / "vendor" / "ad140" / "packres" / "pRFiles.exe"
+            converter.parent.mkdir(parents=True)
+            packer.parent.mkdir(parents=True)
+            converter.touch()
+            packer.touch()
+            config = converter_automation.ConverterConfig(
+                converter_path=r"%AU_TASK_SKILL_HOME%/vendor/converter/converter.exe",
+                packer_path=r"%AU_TASK_SKILL_HOME%/vendor/ad140/packres/pRFiles.exe",
+            )
+            with mock.patch.dict(
+                converter_automation.os.environ,
+                {"AU_TASK_SKILL_HOME": str(root)},
+            ):
+                self.assertEqual(
+                    converter_automation.resolve_converter_executable(
+                        config,
+                        root / "config.json",
+                    ),
+                    converter,
+                )
+            with mock.patch.dict(
+                packer_automation.os.environ,
+                {"AU_TASK_SKILL_HOME": str(root)},
+            ):
+                self.assertEqual(
+                    packer_automation.resolve_packer_executable(
+                        config,
+                        root / "config.json",
+                    ),
+                    packer,
+                )
+
     def test_converter_file_dialog_text_supports_unicode_paths(self) -> None:
         paths = [Path(r"D:\提示音\开始.wav"), Path(r"D:\提示音\结束.wav")]
         value = converter_automation.file_dialog_text(paths)

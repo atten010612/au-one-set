@@ -20,6 +20,22 @@ class SkillTests(unittest.TestCase):
             self.assertIn("start_audio_workflow", content)
             self.assertIn("get_audio_workflow_status", content)
 
+    def test_global_installer_registers_skill_home(self) -> None:
+        root = Path(__file__).resolve().parent
+        installer = (root / "install_global_skills.bat").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("setx AU_TASK_SKILL_HOME", installer)
+        self.assertTrue(
+            (root / "vendor" / "converter" / "README.txt").is_file()
+        )
+        self.assertTrue(
+            (root / "vendor" / "ad140" / "packres" / "README.txt").is_file()
+        )
+        self.assertTrue(
+            (root / "vendor" / "ad140" / "test_dir" / "README.txt").is_file()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

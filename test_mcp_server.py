@@ -75,6 +75,7 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("packer_path", result["checks"])
         self.assertIn("packres.exe", result["checks"])
         self.assertIn("new_packres.bat", result["checks"])
+        self.assertIn("AU_TASK_SKILL_HOME", result["checks"])
 
     def test_cursor_slash_commands_map_to_all_workflow_steps(self) -> None:
         commands = Path(__file__).resolve().parent / ".cursor" / "commands"

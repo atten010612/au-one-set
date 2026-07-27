@@ -2,7 +2,28 @@
 
 这是一个可独立发布的 Cursor Skills 项目，仅提供杰理音频转换和打包入口。
 实际执行由已经全局安装的 `audio-workflow` MCP 完成，不复制GUI自动化
-代码或软件。
+代码。杰理软件统一放在本 Skill 仓库的 `vendor` 中。
+
+## 软件目录
+
+将之前建立的整个 `vendor` 文件夹移动到本仓库，最终必须是：
+
+```text
+au-task-skill\
+└── vendor\
+    ├── converter\
+    │   ├── 音频文件转换工具_1.2.2.exe
+    │   └── 转换工具原有依赖
+    └── ad140\
+        ├── packres\
+        │   ├── pRFiles.exe
+        │   └── pRFiles原有依赖
+        └── test_dir\
+            ├── packres.exe
+            └── new_packres.bat
+```
+
+不要保留旧工程根目录下的 `vendor`，也不要在上述路径中再套一层原文件夹。
 
 ## 命令
 
@@ -43,6 +64,15 @@ install_global_skills.bat
 %USERPROFILE%\.cursor\skills\au-task1
 %USERPROFILE%\.cursor\skills\au-task2
 ```
+
+安装器还会设置当前 Windows 用户环境变量：
+
+```text
+AU_TASK_SKILL_HOME=本au-task-skill目录的绝对路径
+```
+
+全局 `audio-workflow` MCP 通过这个变量调用本仓库内的 EXE。移动本仓库
+后必须重新运行安装器并 Reload Cursor。
 
 然后在 Cursor 中执行：
 

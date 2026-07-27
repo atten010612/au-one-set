@@ -219,9 +219,3 @@ __marimo__/
 
 # Local portable runtimes and proprietary vendor tools
 tools/*.exe
-vendor/converter/*
-!vendor/converter/README.txt
-vendor/ad140/packres/*
-!vendor/ad140/packres/README.txt
-vendor/ad140/test_dir/*
-!vendor/ad140/test_dir/README.txt

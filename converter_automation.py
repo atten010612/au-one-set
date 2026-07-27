@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import importlib
 import os
+import re
 import site
 import subprocess
 import sys
@@ -33,6 +34,15 @@ CONVERTER_INPUT_EXTENSIONS = {
 
 class ConverterAutomationError(RuntimeError):
     """Expected converter setup or automation failure."""
+
+
+def expand_environment_path(value: str) -> Path:
+    expanded = re.sub(
+        r"%([^%]+)%",
+        lambda match: os.environ.get(match.group(1), match.group(0)),
+        value,
+    )
+    return Path(os.path.expandvars(expanded)).expanduser()
 
 
 @dataclass
@@ -146,7 +156,11 @@ def resolve_converter_executable(
     config: ConverterConfig,
     config_path: Path,
 ) -> Path:
-    configured = Path(config.converter_path).expanduser() if config.converter_path else None
+    configured = (
+        expand_environment_path(config.converter_path)
+        if config.converter_path
+        else None
+    )
     if configured and not configured.is_absolute():
         configured = config_path.parent / configured
     if configured and configured.is_file():

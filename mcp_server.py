@@ -350,8 +350,12 @@ class WorkflowManager:
             if matches:
                 artifacts[folder_name] = sorted(set(matches))
         try:
+            from converter_automation import expand_environment_path
+
             config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-            test_dir = Path(config.get("packres_input_directory", ""))
+            test_dir = expand_environment_path(
+                config.get("packres_input_directory", "")
+            )
             if not test_dir.is_absolute():
                 test_dir = self.project_root / test_dir
             for name in ("OUTPUT.LST", config.get("packres_output_name", "dir_music")):
@@ -366,6 +370,7 @@ class WorkflowManager:
 def check_environment() -> dict[str, Any]:
     """Return portable tool/dependency readiness without modifying the system."""
     from audio_processor import find_executable
+    from converter_automation import expand_environment_path
 
     expected = {
         "ffmpeg": PROJECT_ROOT / "tools" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg"),
@@ -380,7 +385,7 @@ def check_environment() -> dict[str, Any]:
     for key in ("converter_path", "packer_path", "packres_input_directory"):
         value = config.get(key)
         if value:
-            path = Path(value)
+            path = expand_environment_path(value)
             if not path.is_absolute():
                 path = PROJECT_ROOT / path
             resolved_config_paths[key] = path
@@ -398,6 +403,11 @@ def check_environment() -> dict[str, Any]:
             "exists": path.exists(),
         }
         for name, path in expected.items()
+    }
+    skill_home = os.environ.get("AU_TASK_SKILL_HOME", "")
+    checks["AU_TASK_SKILL_HOME"] = {
+        "path": skill_home,
+        "exists": bool(skill_home) and Path(skill_home).is_dir(),
     }
     checks["ffmpeg"]["detected_path"] = find_executable("ffmpeg")
     checks["ffprobe"]["detected_path"] = find_executable("ffprobe")
