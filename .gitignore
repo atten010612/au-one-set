@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local portable runtimes and proprietary vendor tools
+tools/*.exe

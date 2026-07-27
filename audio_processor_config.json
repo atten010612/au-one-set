@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "converter_path": "%AU_TASK_SKILL_HOME%\\vendor\\converter\\音频文件转换工具_1.2.2.exe",
+  "format": "F1A",
+  "sample_rate": "32K",
+  "bit_rate": "32K",
+  "output_folder_name": "converted",
+  "auto_install_pywinauto": true,
+  "clear_existing_files": true,
+  "window_title_regex": ".*音频文件转换工具.*",
+  "startup_timeout_seconds": 20,
+  "conversion_timeout_seconds": 120,
+  "packer_enabled": true,
+  "packer_path": "%AU_TASK_SKILL_HOME%\\vendor\\ad140\\packres\\pRFiles.exe",
+  "packer_window_title_regex": ".*调整文件顺序.*",
+  "packer_output_name": "OUTPUT.LST",
+  "packer_timeout_seconds": 30,
+  "packres_input_directory": "%AU_TASK_SKILL_HOME%\\vendor\\ad140\\test_dir",
+  "packres_batch_name": "new_packres.bat",
+  "packres_output_name": "dir_music",
+  "packres_timeout_seconds": 60
+}
