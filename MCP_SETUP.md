@@ -19,8 +19,8 @@ audio-workflow\
 ├── requirements-mcp.txt
 ├── setup_mcp.bat
 ├── tools\
-│   ├── ffmpeg.exe
-│   └── ffprobe.exe
+│   ├── ffmpeg.exe（可选）
+│   └── ffprobe.exe（可选）
 └── vendor\
     ├── converter\
     │   ├── 音频文件转换工具_1.2.2.exe
@@ -67,6 +67,17 @@ pywinauto 0.6.9
 ```
 
 安装结束后在 Cursor 执行 “Developer: Reload Window”。
+
+如果 FFmpeg 已经通过 winget、Chocolatey 或手工命令加入系统 PATH，
+不需要再复制到 `tools`。环境检查会依次接受项目内 `tools` 或系统
+PATH。FFmpeg 刚安装后必须重启 Cursor，让 MCP 继承最新 PATH。
+
+安装 BAT 使用纯 ASCII 输出，避免 Windows CMD 将 UTF-8 中文行错误解析为
+命令。也可以手动检查：
+
+```bat
+.venv\Scripts\python.exe mcp_server.py --check
+```
 
 ## 3. Cursor MCP 工具
 

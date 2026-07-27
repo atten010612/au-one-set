@@ -462,6 +462,10 @@ else:
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--check":
+        result = check_environment()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ready"] else 2
     if mcp is None:
         print(
             "缺少 fastmcp。请先运行 setup_mcp.bat。",
