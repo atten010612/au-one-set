@@ -404,6 +404,14 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 `音频转换工具/AD140打包工具/packres/pRFiles.exe` 推导到同一套工具根
 目录下的 `音频转换工具/test_dir`。
 
+脚本启动的控制台程序均使用 Windows 无窗口模式：包括
+`ffmpeg/ffprobe`、`winget`、自动安装依赖的 `pip`、`new_packres.bat`
+以及 MCP 工作进程和取消任务使用的 `taskkill`，运行时不会再弹出或闪过
+额外的 CMD 窗口。转换工具和 `pRFiles.exe` 本身是 GUI 程序，且自动化
+依赖其窗口、文件选择对话框和键盘输入，因此不能隐藏；它们不会创建额外
+控制台，但操作文件对话框时可能短暂获取焦点。若要让这两个界面也完全不可见，
+需要在独立 Windows 用户会话中运行整个工作流。
+
 第一次安装 `pywinauto` 时，脚本会立即刷新 `pywin32` 的模块路径。如果
 Windows 仍提示 `No module named 'win32api'`，说明当前 Python 进程没有
 加载新安装的 `.pth` 文件；关闭窗口后重新运行 BAT 即可，无需重复安装。

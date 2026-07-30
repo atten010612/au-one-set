@@ -36,6 +36,13 @@ class ConverterAutomationError(RuntimeError):
     """Expected converter setup or automation failure."""
 
 
+def no_window_creation_flags() -> int:
+    """Keep console executables hidden when running on Windows."""
+    if os.name != "nt":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def expand_environment_path(value: str) -> Path:
     expanded = re.sub(
         r"%([^%]+)%",
@@ -216,7 +223,11 @@ def ensure_pywinauto(auto_install: bool) -> None:
         "install",
         f"pywinauto=={PYWINAUTO_VERSION}",
     ]
-    process = subprocess.run(command, check=False)
+    process = subprocess.run(
+        command,
+        check=False,
+        creationflags=no_window_creation_flags(),
+    )
     if process.returncode:
         raise ConverterAutomationError(
             "pywinauto 安装失败。请联网后手动运行：" + " ".join(command)
@@ -1107,6 +1118,7 @@ def automate_converter(
     application = Application(backend="uia").start(
         f'"{executable}"',
         work_dir=str(executable.parent),
+        create_new_console=False,
     )
     window = application.window(title_re=config.window_title_regex)
     try:

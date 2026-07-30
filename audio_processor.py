@@ -213,6 +213,16 @@ def find_executable(name: str, explicit: str | None = None) -> str | None:
     return shutil.which(name)
 
 
+def no_window_creation_flags(*, new_process_group: bool = False) -> int:
+    """Return Windows process flags without assuming they exist on this host."""
+    if os.name != "nt":
+        return 0
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if new_process_group:
+        flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    return flags
+
+
 def install_ffmpeg_with_winget() -> bool:
     if os.name != "nt":
         return False
@@ -238,7 +248,11 @@ def install_ffmpeg_with_winget() -> bool:
         "--accept-source-agreements",
     ]
     try:
-        process = subprocess.run(command, check=False)
+        process = subprocess.run(
+            command,
+            check=False,
+            creationflags=no_window_creation_flags(),
+        )
     except OSError as error:
         log(f"无法启动 winget：{error}")
         log("请在 CMD 中手动运行：winget install -e --id Gyan.FFmpeg --source winget")
@@ -278,7 +292,7 @@ def run(command: list[str], context: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         errors="replace",
         check=False,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        creationflags=no_window_creation_flags(),
     )
     if process.returncode:
         detail = process.stderr.strip().splitlines()

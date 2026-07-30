@@ -1,11 +1,33 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import mcp_server
 
 
 class MCPServerTests(unittest.TestCase):
+    def test_windows_worker_combines_hidden_and_process_group_flags(self) -> None:
+        with (
+            mock.patch.object(mcp_server.os, "name", "nt"),
+            mock.patch.object(
+                mcp_server.subprocess,
+                "CREATE_NO_WINDOW",
+                0x08000000,
+                create=True,
+            ),
+            mock.patch.object(
+                mcp_server.subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0x00000200,
+                create=True,
+            ),
+        ):
+            self.assertEqual(
+                mcp_server.no_window_creation_flags(new_process_group=True),
+                0x08000200,
+            )
+
     def test_progress_parser_tracks_processing_and_conversion(self) -> None:
         manager = mcp_server.WorkflowManager(Path.cwd(), start_dispatcher=False)
         job = mcp_server.WorkflowJob(

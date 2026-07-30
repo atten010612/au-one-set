@@ -21,6 +21,13 @@ class PackerAutomationError(RuntimeError):
 PACKED_AUDIO_EXTENSIONS = {".a", ".e", ".f1a", ".f1b", ".f1c", ".ump3"}
 
 
+def no_window_creation_flags() -> int:
+    """Keep console executables hidden when running on Windows."""
+    if os.name != "nt":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def expand_environment_path(value: str) -> Path:
     expanded = re.sub(
         r"%([^%]+)%",
@@ -552,6 +559,7 @@ def run_packres_batch(
             errors="replace",
             check=False,
             timeout=config.packres_timeout_seconds,
+            creationflags=no_window_creation_flags(),
         )
     except subprocess.TimeoutExpired as error:
         raise PackerAutomationError(
@@ -591,6 +599,7 @@ def automate_packer(
     application = Application(backend="win32").start(
         f'"{executable}"',
         work_dir=str(executable.parent),
+        create_new_console=False,
     )
     window = application.window(title_re=config.packer_window_title_regex)
     try:

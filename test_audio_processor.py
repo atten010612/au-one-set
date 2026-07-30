@@ -291,6 +291,10 @@ class AudioProcessorTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[:4], ["cmd.exe", "/d", "/c", "winget"])
         self.assertIn("Gyan.FFmpeg", command)
+        self.assertEqual(
+            run.call_args.kwargs["creationflags"],
+            audio_processor.no_window_creation_flags(),
+        )
 
     def test_winget_access_error_is_reported_without_traceback(self) -> None:
         with (
@@ -613,7 +617,7 @@ class AudioProcessorTests(unittest.TestCase):
                 converter_automation.subprocess,
                 "run",
                 return_value=mock.Mock(returncode=0),
-            ),
+            ) as run,
             mock.patch.object(converter_automation.site, "getsitepackages", return_value=[]),
             mock.patch.object(
                 converter_automation.site,
@@ -623,6 +627,10 @@ class AudioProcessorTests(unittest.TestCase):
         ):
             converter_automation.ensure_pywinauto(auto_install=True)
         self.assertEqual(import_module.call_count, 3)
+        self.assertEqual(
+            run.call_args.kwargs["creationflags"],
+            converter_automation.no_window_creation_flags(),
+        )
 
     def test_pywinauto_import_failure_requests_one_time_restart(self) -> None:
         with (
@@ -1182,6 +1190,10 @@ class AudioProcessorTests(unittest.TestCase):
             self.assertEqual(output, root / "dir_music")
             self.assertEqual(run.call_args.kwargs["cwd"], str(root))
             self.assertIn(str(batch), run.call_args.args[0])
+            self.assertEqual(
+                run.call_args.kwargs["creationflags"],
+                packer_automation.no_window_creation_flags(),
+            )
 
 
 if __name__ == "__main__":

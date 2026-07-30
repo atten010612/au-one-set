@@ -34,6 +34,16 @@ WORKFLOW_NAMES = {
 TERMINAL_STATES = {"completed", "failed", "cancelled"}
 
 
+def no_window_creation_flags(*, new_process_group: bool = False) -> int:
+    """Return Windows background-process flags portably."""
+    if os.name != "nt":
+        return 0
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if new_process_group:
+        flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    return flags
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -190,9 +200,7 @@ class WorkflowManager:
                 "PYTHONUNBUFFERED": "1",
             }
         )
-        creation_flags = (
-            subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        )
+        creation_flags = no_window_creation_flags(new_process_group=True)
         with self.lock:
             if job.status == "cancelled":
                 return
@@ -328,6 +336,7 @@ class WorkflowManager:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
+                creationflags=no_window_creation_flags(),
             )
         else:
             try:
