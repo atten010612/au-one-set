@@ -7,6 +7,7 @@ import importlib
 import os
 import re
 import site
+import shutil
 import subprocess
 import sys
 import time
@@ -34,6 +35,23 @@ CONVERTER_INPUT_EXTENSIONS = {
 
 class ConverterAutomationError(RuntimeError):
     """Expected converter setup or automation failure."""
+
+
+def clear_generated_directory(directory: Path) -> None:
+    """Remove every previous conversion artifact from an output directory."""
+    if not directory.exists():
+        directory.mkdir(parents=True)
+        return
+    if not directory.is_dir():
+        raise ConverterAutomationError(f"转换输出路径不是文件夹：{directory}")
+    for path in directory.iterdir():
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as error:
+            raise ConverterAutomationError(f"无法删除旧转换产物 {path}：{error}") from error
 
 
 def no_window_creation_flags() -> int:
@@ -1259,6 +1277,9 @@ def run_configured_converter(
         script_directory,
         config.output_folder_name,
     )
+    if config.clear_existing_files:
+        print(f"[转换] 清理旧输出：{output}", flush=True)
+        clear_generated_directory(output)
     ensure_pywinauto(config.auto_install_pywinauto)
     automate_converter(
         executable,

@@ -19,6 +19,7 @@ class PackerAutomationError(RuntimeError):
 
 
 PACKED_AUDIO_EXTENSIONS = {".a", ".e", ".f1a", ".f1b", ".f1c", ".ump3"}
+PACKER_TOOL_EXTENSIONS = {".bat", ".exe"}
 
 
 def no_window_creation_flags() -> int:
@@ -520,6 +521,25 @@ def stage_converted_files(
     return staged
 
 
+def clear_packer_directory(packer_directory: Path) -> None:
+    """Keep only batch files and executables in test_dir."""
+    packer_directory.mkdir(parents=True, exist_ok=True)
+    for path in packer_directory.iterdir():
+        if (
+            path.is_file()
+            and not path.is_symlink()
+            and path.suffix.casefold() in PACKER_TOOL_EXTENSIONS
+        ):
+            continue
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as error:
+            raise PackerAutomationError(f"无法清理 test_dir 项目 {path}：{error}") from error
+
+
 def resolve_packres_input_directory(
     executable: Path,
     configured: str,
@@ -594,7 +614,10 @@ def automate_packer(
         executable,
         config.packres_input_directory,
     )
-    staging_directory.mkdir(parents=True, exist_ok=True)
+    if staging_directory.resolve() == source_directory.resolve():
+        raise PackerAutomationError("test_dir 不能与 converted 使用同一个目录")
+    print(f"[合成] 清理 test_dir 旧产物：{staging_directory}", flush=True)
+    clear_packer_directory(staging_directory)
     output = staging_directory / config.packer_output_name
     previous_signature = _signature(output)
     application = Application(backend="win32").start(

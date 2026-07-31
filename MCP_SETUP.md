@@ -66,6 +66,10 @@ exit /b %errorlevel%
 `toy\jl_isd.fw` 和上图的 `.lkey` 载入 AD15n 授权工具，选择“无限制”并
 授权。
 
+每次运行还会清空旧 `converted`，并删除 `test_dir` 中除 `.bat`、`.exe`
+外的所有文件和子目录；不要把需要长期保留的资料放进这两个输出目录。
+授权前也会删除 `AD15n授权工具` 目录中上一次生成的 `.fw`。
+
 ## 2. 安装 MCP Python 环境
 
 电脑需要 Python 3.10 或更高版本。双击：

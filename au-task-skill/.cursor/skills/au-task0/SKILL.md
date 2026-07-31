@@ -26,17 +26,20 @@ disable-model-invocation: true
 ```
 
 使用 MCP 工具 `start_audio_workflow`。该模式会在转换前删除音频文件名中的
-空白字符，输出 `converted`，然后依次：
+空白字符，并在每个阶段开始前删除上一次生成的内容，然后依次：
 
-1. 生成 `OUTPUT.LST` 和 `dir_music`；
-2. 用新的 `dir_music` 替换 `强烧工具\toy\dir_music`，删除旧的
+1. 清空旧 `converted` 后重新转换；
+2. 清理 `test_dir`，只保留 `.bat` 和 `.exe` 文件，再生成
+   `OUTPUT.LST` 和 `dir_music`；
+3. 用新的 `dir_music` 替换 `强烧工具\toy\dir_music`，删除旧的
    `toy\jl_isd.fw`（不存在时忽略）；
-3. 在 `强烧工具` 目录执行 `download.bat`，确认 `toy` 中生成新的
+4. 在 `强烧工具` 目录执行 `download.bat`，确认 `toy` 中生成新的
    `jl_isd.fw`；
-4. 启动 `AD15n授权工具\固件文件烧写授权工具_1.5.4.exe`，选择上述
+5. 删除授权工具目录中上一次生成的 `.fw`，启动
+   `AD15n授权工具\固件文件烧写授权工具_1.5.4.exe`，选择上述
    `jl_isd.fw` 和 `26华钜芯-AD15N-9016-AA515221.lkey`，选择“无限制”
    并点击“授权”；
-5. 检测新增或更新的 `.fw` 文件，确认授权成功。
+6. 检测新增或更新的 `.fw` 文件，确认授权成功。
 
 5. 保存 `job_id`，使用 `get_audio_workflow_status` 持续查询直到
    `completed`、`failed` 或 `cancelled`。不要重复启动相同任务。

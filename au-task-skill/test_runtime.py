@@ -10,12 +10,51 @@ RUNTIME = ROOT / "runtime"
 sys.path.insert(0, str(RUNTIME))
 
 import au_task  # noqa: E402
+import converter_runtime  # noqa: E402
 import firmware_runtime  # noqa: E402
 import install_cursor  # noqa: E402
 import mcp_server  # noqa: E402
+import packer_runtime  # noqa: E402
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_previous_stage_outputs_are_cleaned(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            converted = root / "converted"
+            converted.mkdir()
+            (converted / "old.f1a").touch()
+            (converted / "nested").mkdir()
+            (converted / "nested" / "old.bin").touch()
+            converter_runtime.clear_generated_directory(converted)
+            self.assertEqual(list(converted.iterdir()), [])
+
+            test_dir = root / "test_dir"
+            test_dir.mkdir()
+            for name in ("packres.exe", "new_packres.bat", "helper.EXE"):
+                (test_dir / name).touch()
+            for name in ("OUTPUT.LST", "dir_music", "notes.txt"):
+                (test_dir / name).touch()
+            (test_dir / "generated").mkdir()
+            packer_runtime.clear_packer_directory(test_dir)
+            self.assertEqual(
+                {path.name for path in test_dir.iterdir()},
+                {"packres.exe", "new_packres.bat", "helper.EXE"},
+            )
+
+            authorization = root / "authorization"
+            authorization.mkdir()
+            source = authorization / "jl_isd.fw"
+            stale = authorization / "old-authorized.fw"
+            source.touch()
+            stale.touch()
+            firmware_runtime.clear_previous_authorized_firmware(
+                authorization,
+                source,
+            )
+            self.assertTrue(source.exists())
+            self.assertFalse(stale.exists())
+
     def test_filename_whitespace_and_collision_preparation(self) -> None:
         self.assertEqual(
             au_task.sanitized_name("03 [连接]\tAPP 已连接.wav"),

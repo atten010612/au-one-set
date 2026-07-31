@@ -57,6 +57,23 @@ def _firmware_signatures(directories: Iterable[Path]) -> dict[Path, tuple[int, i
     return signatures
 
 
+def clear_previous_authorized_firmware(
+    authorization_directory: Path,
+    source_firmware: Path,
+) -> None:
+    """Delete previous authorization outputs without deleting the new input."""
+    source = source_firmware.resolve()
+    for path in authorization_directory.glob("*.fw"):
+        if path.resolve() == source:
+            continue
+        try:
+            path.unlink()
+        except OSError as error:
+            raise FirmwareAutomationError(
+                f"无法删除旧授权固件 {path}：{error}"
+            ) from error
+
+
 def generate_firmware(
     dir_music: Path,
     strong_burn_directory: Path,
@@ -285,6 +302,7 @@ def authorize_firmware(
     if not firmware.is_file():
         raise FirmwareAutomationError(f"找不到待授权固件：{firmware}")
 
+    clear_previous_authorized_firmware(authorization_directory, firmware)
     output_directories = (authorization_directory, firmware.parent)
     application = Application(backend="win32").start(
         f'"{executable}"',

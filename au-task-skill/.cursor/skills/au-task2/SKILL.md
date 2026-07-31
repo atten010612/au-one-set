@@ -26,8 +26,10 @@ disable-model-invocation: true
 ```
 
 该模式会删除旧转换文件名中的空白字符，生成 `OUTPUT.LST`，复制资源到
-`test_dir`，执行 `new_packres.bat` 并校验 `dir_music`，随后生成
-`toy\jl_isd.fw` 并通过 AD15n 工具按“无限制”模式授权。
+`test_dir` 前会删除其中除 `.bat` 和 `.exe` 外的全部旧内容，再执行
+`new_packres.bat` 并校验 `dir_music`。随后替换 `toy\dir_music`、删除旧
+`toy\jl_isd.fw`，生成新固件；授权前也会删除授权目录中的旧 `.fw`，再
+通过 AD15n 工具按“无限制”模式授权。
 
 5. 保存 `job_id`，使用 `get_audio_workflow_status` 持续查询至终态。用户
    要求取消时调用 `cancel_audio_workflow`。

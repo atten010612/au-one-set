@@ -278,6 +278,9 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
 - 采样率：`8K`、`12K`、`16K`、`24K`、`32K`
 - 码率：`8K`、`16K`、`24K`、`32K`、`40K`、`48K`、`56K`、`64K`
 
+当 `clear_existing_files` 为 `true`（默认值）时，每次转换前会删除
+`converted` 中的全部旧文件和子目录，确保结果只来自本次运行。
+
 ### 换到其他电脑
 
 在新电脑上打开脚本旁的：
@@ -357,23 +360,25 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 
 专用格式转换并校验成功后，脚本会继续：
 
-1. 打开 `packer_path` 指定的 `pRFiles.exe`；
-2. 根据 `converted` 的绝对路径选择对应磁盘；
-3. 在右侧树形目录逐层展开每一级文件夹；
-4. 选中 `converted`，文件顺序保持工具加载结果；
-5. 点击“保存”；
-6. 将 `OUTPUT.LST` 直接另存到 `packres_input_directory`（即
+1. 删除 `test_dir` 中除 `.bat` 和 `.exe` 外的全部上次运行内容；
+2. 打开 `packer_path` 指定的 `pRFiles.exe`；
+3. 根据 `converted` 的绝对路径选择对应磁盘；
+4. 在右侧树形目录逐层展开每一级文件夹；
+5. 选中 `converted`，文件顺序保持工具加载结果；
+6. 点击“保存”；
+7. 将 `OUTPUT.LST` 直接另存到 `packres_input_directory`（即
    `test_dir`）并校验；
-7. 清理 `packres_input_directory` 中上次遗留的杰理格式文件，再将
+8. 将
    `converted` 中的 `.a/.e/.f1a/.f1b/.f1c/.ump3` 复制进去；
-8. 在 `test_dir` 中执行 `new_packres.bat`；
-9. 校验 `test_dir\dir_music` 已生成或更新并显示“输出成功”；
-10. 覆盖复制到 `强烧工具\toy\dir_music`，删除旧 `toy\jl_isd.fw`；
-11. 从 `强烧工具` 目录执行 `download.bat`；
-12. 确认 `toy` 中生成新的 `jl_isd.fw`；
-13. 启动 `固件文件烧写授权工具_1.5.4.exe`，选择新固件与配置的 KEY；
-14. 选择“无限制”并点击“授权”；
-15. 检测新增或更新的 `.fw` 文件后报告成功。
+9. 在 `test_dir` 中执行 `new_packres.bat`；
+10. 校验 `test_dir\dir_music` 已生成或更新并显示“输出成功”；
+11. 覆盖复制到 `强烧工具\toy\dir_music`，删除旧 `toy\jl_isd.fw`；
+12. 从 `强烧工具` 目录执行 `download.bat`；
+13. 确认 `toy` 中生成新的 `jl_isd.fw`；
+14. 删除授权工具目录中上一次生成的 `.fw`；
+15. 启动 `固件文件烧写授权工具_1.5.4.exe`，选择新固件与配置的 KEY；
+16. 选择“无限制”并点击“授权”；
+17. 检测新增或更新的 `.fw` 文件后报告成功。
 
 换到其他电脑时，在同一个 `audio_processor_config.json` 中修改：
 
