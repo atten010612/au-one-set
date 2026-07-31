@@ -18,5 +18,16 @@
   "packres_input_directory": "%AU_TASK_SKILL_HOME%\\vendor\\ad140\\test_dir",
   "packres_batch_name": "new_packres.bat",
   "packres_output_name": "dir_music",
-  "packres_timeout_seconds": 60
+  "packres_timeout_seconds": 60,
+  "firmware_enabled": true,
+  "strong_burn_directory": "%AU_TASK_SKILL_HOME%\\vendor\\强烧工具",
+  "strong_burn_toy_directory_name": "toy",
+  "strong_burn_batch_name": "download.bat",
+  "strong_burn_firmware_name": "jl_isd.fw",
+  "strong_burn_timeout_seconds": 120,
+  "authorization_directory": "%AU_TASK_SKILL_HOME%\\vendor\\AD15n授权工具",
+  "authorization_executable_name": "固件文件烧写授权工具_1.5.4.exe",
+  "authorization_key_name": "26华钜芯-AD15N-9016-AA515221.lkey",
+  "authorization_window_title_regex": ".*固件文件烧写授权工具.*",
+  "authorization_timeout_seconds": 60
 }

@@ -40,14 +40,17 @@ class MCPServerTests(unittest.TestCase):
         manager._consume_line(job, "[完成] a.wav：处理完成")
         self.assertEqual((job.current, job.total), (1, 4))
         self.assertEqual(job.phase, "processing")
-        self.assertAlmostEqual(job.percent, 15.0)
+        self.assertAlmostEqual(job.percent, 13.75)
 
         manager._consume_line(job, "[转换] 已发现 2/4 个结果，继续等待……")
         self.assertEqual(job.phase, "conversion")
-        self.assertAlmostEqual(job.percent, 75.0)
+        self.assertAlmostEqual(job.percent, 67.5)
 
         manager._consume_line(job, "[合成] 输出成功：dir_music")
         self.assertEqual(job.phase, "synthesis")
+        self.assertEqual(job.percent, 90.0)
+        manager._consume_line(job, "[授权] 已授权固件：authorized.fw")
+        self.assertEqual(job.phase, "authorization")
         self.assertEqual(job.percent, 100.0)
 
     def test_mode_specific_progress_ranges(self) -> None:
@@ -66,7 +69,7 @@ class MCPServerTests(unittest.TestCase):
             workflow_step=4,
         )
         manager._set_stage_progress(synthesis_only, "synthesis", 0.8)
-        self.assertEqual(synthesis_only.percent, 80.0)
+        self.assertEqual(synthesis_only.percent, 40.0)
 
     def test_queued_job_can_be_cancelled(self) -> None:
         manager = mcp_server.WorkflowManager(Path.cwd(), start_dispatcher=False)

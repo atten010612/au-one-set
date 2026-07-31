@@ -26,13 +26,19 @@ audio-workflow\
         ├── converter\
         │   ├── 音频文件转换工具_1.2.2.exe
         │   └── 该软件原有的其他文件和子目录
-        └── ad140\
+        ├── ad140\
             ├── packres\
             │   ├── pRFiles.exe
             │   └── pRFiles原有的其他文件和子目录
             └── test_dir\
                 ├── packres.exe
                 └── new_packres.bat
+        ├── 强烧工具\
+        │   ├── download.bat
+        │   └── toy\
+        └── AD15n授权工具\
+            ├── 固件文件烧写授权工具_1.5.4.exe
+            └── 26华钜芯-AD15N-9016-AA515221.lkey
 ```
 
 不要把工具原文件夹再套一层。例如以下路径是错误的：
@@ -54,6 +60,11 @@ cd /d "%~dp0"
 packres.exe -n test_dir -list OUTPUT.LST -o dir_music -normal
 exit /b %errorlevel%
 ```
+
+生成 `dir_music` 后，MCP 会覆盖 `强烧工具\toy\dir_music`，删除旧
+`jl_isd.fw` 并从 `强烧工具` 目录执行 `download.bat`。随后会将新生成的
+`toy\jl_isd.fw` 和上图的 `.lkey` 载入 AD15n 授权工具，选择“无限制”并
+授权。
 
 ## 2. 安装 MCP Python 环境
 

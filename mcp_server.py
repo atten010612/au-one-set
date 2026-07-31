@@ -304,6 +304,12 @@ class WorkflowManager:
                     if marker in line:
                         self._set_stage_progress(job, "synthesis", fraction)
                         break
+            if line.startswith("[强烧]"):
+                fraction = 1.0 if "已生成并校验" in line else 0.25
+                self._set_stage_progress(job, "firmware_generation", fraction)
+            if line.startswith("[授权]"):
+                fraction = 1.0 if "已授权固件" in line else 0.25
+                self._set_stage_progress(job, "authorization", fraction)
 
     def _set_stage_progress(
         self,
@@ -313,14 +319,25 @@ class WorkflowManager:
     ) -> None:
         ranges = {
             0: {
-                "processing": (0, 60),
-                "conversion": (60, 90),
-                "synthesis": (90, 100),
+                "processing": (0, 55),
+                "conversion": (55, 80),
+                "synthesis": (80, 90),
+                "firmware_generation": (90, 95),
+                "authorization": (95, 100),
             },
             1: {"processing": (0, 100)},
-            2: {"conversion": (0, 75), "synthesis": (75, 100)},
+            2: {
+                "conversion": (0, 60),
+                "synthesis": (60, 80),
+                "firmware_generation": (80, 90),
+                "authorization": (90, 100),
+            },
             3: {"conversion": (0, 100)},
-            4: {"synthesis": (0, 100)},
+            4: {
+                "synthesis": (0, 50),
+                "firmware_generation": (50, 75),
+                "authorization": (75, 100),
+            },
         }
         start, end = ranges[job.workflow_step].get(stage, (0, 100))
         job.phase = stage
@@ -371,6 +388,30 @@ class WorkflowManager:
                 path = test_dir / name
                 if path.is_file():
                     artifacts[name] = str(path.resolve())
+            if config.get("firmware_enabled", True):
+                strong_burn = expand_environment_path(config["strong_burn_directory"])
+                authorization = expand_environment_path(
+                    config["authorization_directory"]
+                )
+                toy = strong_burn / config.get(
+                    "strong_burn_toy_directory_name",
+                    "toy",
+                )
+                firmware = toy / config.get(
+                    "strong_burn_firmware_name",
+                    "jl_isd.fw",
+                )
+                if firmware.is_file():
+                    artifacts["jl_isd.fw"] = str(firmware.resolve())
+                authorized = sorted(
+                    authorization.glob("*.fw"),
+                    key=lambda path: path.stat().st_mtime_ns,
+                    reverse=True,
+                )
+                if authorized:
+                    artifacts["authorized_firmware"] = str(
+                        authorized[0].resolve()
+                    )
         except Exception:
             pass
         return artifacts
@@ -406,6 +447,34 @@ def check_environment() -> dict[str, Any]:
             "packres_batch_name",
             "new_packres.bat",
         )
+    if config.get("firmware_enabled", True):
+        for key in ("strong_burn_directory", "authorization_directory"):
+            value = config.get(key)
+            if value:
+                path = expand_environment_path(value)
+                if not path.is_absolute():
+                    path = PROJECT_ROOT / path
+                resolved_config_paths[key] = path
+        strong_burn = resolved_config_paths.get("strong_burn_directory")
+        authorization = resolved_config_paths.get("authorization_directory")
+        if strong_burn:
+            expected["toy"] = strong_burn / config.get(
+                "strong_burn_toy_directory_name",
+                "toy",
+            )
+            expected["download.bat"] = strong_burn / config.get(
+                "strong_burn_batch_name",
+                "download.bat",
+            )
+        if authorization:
+            expected["AD15n授权工具"] = authorization / config.get(
+                "authorization_executable_name",
+                "",
+            )
+            expected["授权KEY"] = authorization / config.get(
+                "authorization_key_name",
+                "",
+            )
     checks = {
         name: {
             "path": str(path.resolve()),

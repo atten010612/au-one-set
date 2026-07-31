@@ -586,6 +586,7 @@ def automate_packer(
     executable: Path,
     source_directory: Path,
     config: Any,
+    config_path: Path,
 ) -> Path:
     from pywinauto import Application
 
@@ -639,7 +640,9 @@ def automate_packer(
         print(f"[合成] 执行 {config.packres_batch_name}……", flush=True)
         final_output = run_packres_batch(staging_directory, config)
         print(f"[合成] 输出成功：{final_output}", flush=True)
-        return final_output
+        from firmware_runtime import run_firmware_workflow
+
+        return run_firmware_workflow(final_output, config, config_path)
     except Exception as error:
         diagnostics = executable.parent / "packer-controls.txt"
         try:
@@ -669,4 +672,9 @@ def run_configured_packer(
         config.packres_input_directory = str(
             (config_path.parent / configured_input).resolve()
         )
-    return automate_packer(executable, source_directory.resolve(), config)
+    return automate_packer(
+        executable,
+        source_directory.resolve(),
+        config,
+        config_path,
+    )

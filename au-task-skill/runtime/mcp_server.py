@@ -264,12 +264,27 @@ class JobManager:
                     if marker in line:
                         self._progress(job, "packaging", fraction)
                         break
+            if line.startswith("[强烧]"):
+                fraction = 1.0 if "已生成并校验" in line else 0.25
+                self._progress(job, "firmware_generation", fraction)
+            if line.startswith("[授权]"):
+                fraction = 1.0 if "已授权固件" in line else 0.25
+                self._progress(job, "authorization", fraction)
 
     def _progress(self, job: Job, phase: str, fraction: float) -> None:
         ranges = {
-            2: {"conversion": (0, 75), "packaging": (75, 100)},
+            2: {
+                "conversion": (0, 60),
+                "packaging": (60, 80),
+                "firmware_generation": (80, 90),
+                "authorization": (90, 100),
+            },
             3: {"conversion": (0, 100)},
-            4: {"packaging": (0, 100)},
+            4: {
+                "packaging": (0, 50),
+                "firmware_generation": (50, 75),
+                "authorization": (75, 100),
+            },
         }
         start, end = ranges[job.workflow_step].get(phase, (0, 100))
         job.phase = phase
@@ -300,6 +315,21 @@ def check_environment() -> dict[str, Any]:
         "packres_batch_name",
         "new_packres.bat",
     )
+    if config.get("firmware_enabled", True):
+        strong_burn = resolve_config_path(config["strong_burn_directory"])
+        authorization = resolve_config_path(config["authorization_directory"])
+        expected.update(
+            {
+                "强烧工具": strong_burn,
+                "toy": strong_burn
+                / config.get("strong_burn_toy_directory_name", "toy"),
+                "download.bat": strong_burn
+                / config.get("strong_burn_batch_name", "download.bat"),
+                "AD15n授权工具": authorization
+                / config["authorization_executable_name"],
+                "授权KEY": authorization / config["authorization_key_name"],
+            }
+        )
     checks = {
         name: {"path": str(path), "exists": path.exists()}
         for name, path in expected.items()
@@ -332,6 +362,20 @@ def discover_artifacts(input_paths: list[str]) -> dict[str, Any]:
             path = test_dir / name
             if path.is_file():
                 artifacts[name] = str(path.resolve())
+        if config.get("firmware_enabled", True):
+            strong_burn = resolve_config_path(config["strong_burn_directory"])
+            toy = strong_burn / config.get("strong_burn_toy_directory_name", "toy")
+            firmware = toy / config.get("strong_burn_firmware_name", "jl_isd.fw")
+            if firmware.is_file():
+                artifacts["jl_isd.fw"] = str(firmware.resolve())
+            authorization = resolve_config_path(config["authorization_directory"])
+            authorized = sorted(
+                authorization.glob("*.fw"),
+                key=lambda path: path.stat().st_mtime_ns,
+                reverse=True,
+            )
+            if authorized:
+                artifacts["authorized_firmware"] = str(authorized[0].resolve())
     except Exception:
         pass
     return artifacts

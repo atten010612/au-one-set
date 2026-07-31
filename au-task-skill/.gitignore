@@ -7,3 +7,7 @@ vendor/ad140/packres/*
 !vendor/ad140/packres/README.txt
 vendor/ad140/test_dir/*
 !vendor/ad140/test_dir/README.txt
+vendor/强烧工具/*
+!vendor/强烧工具/README.txt
+vendor/AD15n授权工具/*
+!vendor/AD15n授权工具/README.txt

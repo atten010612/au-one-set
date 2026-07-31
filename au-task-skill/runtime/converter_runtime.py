@@ -74,6 +74,17 @@ class ConverterConfig:
     packres_batch_name: str = "new_packres.bat"
     packres_output_name: str = "dir_music"
     packres_timeout_seconds: int = 60
+    firmware_enabled: bool = True
+    strong_burn_directory: str = "vendor\\强烧工具"
+    strong_burn_toy_directory_name: str = "toy"
+    strong_burn_batch_name: str = "download.bat"
+    strong_burn_firmware_name: str = "jl_isd.fw"
+    strong_burn_timeout_seconds: int = 120
+    authorization_directory: str = "vendor\\AD15n授权工具"
+    authorization_executable_name: str = "固件文件烧写授权工具_1.5.4.exe"
+    authorization_key_name: str = "26华钜芯-AD15N-9016-AA515221.lkey"
+    authorization_window_title_regex: str = r".*固件文件烧写授权工具.*"
+    authorization_timeout_seconds: int = 60
 
     def validate(self) -> None:
         self.format = self.format.upper()
@@ -110,6 +121,30 @@ class ConverterConfig:
             raise ConverterAutomationError("packres_output_name 不能为空")
         if self.packres_timeout_seconds < 1:
             raise ConverterAutomationError("packres_timeout_seconds 必须大于 0")
+        if self.firmware_enabled:
+            required_firmware_fields = {
+                "strong_burn_directory": self.strong_burn_directory,
+                "strong_burn_toy_directory_name": self.strong_burn_toy_directory_name,
+                "strong_burn_batch_name": self.strong_burn_batch_name,
+                "strong_burn_firmware_name": self.strong_burn_firmware_name,
+                "authorization_directory": self.authorization_directory,
+                "authorization_executable_name": self.authorization_executable_name,
+                "authorization_key_name": self.authorization_key_name,
+                "authorization_window_title_regex": self.authorization_window_title_regex,
+            }
+            empty = [name for name, value in required_firmware_fields.items() if not value.strip()]
+            if empty:
+                raise ConverterAutomationError(
+                    f"固件配置不能为空：{', '.join(empty)}"
+                )
+            if self.strong_burn_timeout_seconds < 1:
+                raise ConverterAutomationError(
+                    "strong_burn_timeout_seconds 必须大于 0"
+                )
+            if self.authorization_timeout_seconds < 1:
+                raise ConverterAutomationError(
+                    "authorization_timeout_seconds 必须大于 0"
+                )
 
 
 def load_converter_config(path: Path) -> ConverterConfig:

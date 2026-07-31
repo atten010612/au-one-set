@@ -10,6 +10,7 @@ RUNTIME = ROOT / "runtime"
 sys.path.insert(0, str(RUNTIME))
 
 import au_task  # noqa: E402
+import firmware_runtime  # noqa: E402
 import install_cursor  # noqa: E402
 import mcp_server  # noqa: E402
 
@@ -43,9 +44,9 @@ class RuntimeTests(unittest.TestCase):
         job = mcp_server.Job("job", [], workflow_step=2, status="running")
         manager._consume(job, "[转换] 已发现 2/4 个结果，继续等待……")
         self.assertEqual(job.phase, "conversion")
-        self.assertEqual(job.percent, 37.5)
-        manager._consume(job, "[合成] 输出成功：dir_music")
-        self.assertEqual(job.phase, "packaging")
+        self.assertEqual(job.percent, 30.0)
+        manager._consume(job, "[授权] 已授权固件：authorized.fw")
+        self.assertEqual(job.phase, "authorization")
         self.assertEqual(job.percent, 100.0)
 
     def test_standalone_environment_contains_all_vendor_tools(self) -> None:
@@ -54,6 +55,72 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("pRFiles", result["checks"])
         self.assertIn("packres.exe", result["checks"])
         self.assertIn("new_packres.bat", result["checks"])
+        self.assertIn("download.bat", result["checks"])
+        self.assertIn("AD15n授权工具", result["checks"])
+        self.assertIn("授权KEY", result["checks"])
+
+    def test_generate_firmware_replaces_inputs_and_requires_new_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dir_music = root / "test_dir" / "dir_music"
+            dir_music.parent.mkdir()
+            dir_music.write_bytes(b"new music")
+            strong_burn = root / "强烧工具"
+            toy = strong_burn / "toy"
+            toy.mkdir(parents=True)
+            (strong_burn / "download.bat").touch()
+            (toy / "dir_music").write_bytes(b"old music")
+            (toy / "jl_isd.fw").write_bytes(b"old firmware")
+
+            def generate(*args: object, **kwargs: object) -> mock.Mock:
+                self.assertFalse((toy / "jl_isd.fw").exists())
+                (toy / "jl_isd.fw").write_bytes(b"new firmware")
+                return mock.Mock(returncode=0, stdout="")
+
+            with mock.patch.object(
+                firmware_runtime.subprocess,
+                "run",
+                side_effect=generate,
+            ) as run:
+                result = firmware_runtime.generate_firmware(
+                    dir_music,
+                    strong_burn,
+                    "toy",
+                    "download.bat",
+                    "jl_isd.fw",
+                    30,
+                )
+            self.assertEqual((toy / "dir_music").read_bytes(), b"new music")
+            self.assertEqual(result.read_bytes(), b"new firmware")
+            self.assertEqual(run.call_args.kwargs["cwd"], str(strong_burn))
+
+    def test_generate_firmware_rejects_missing_batch_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dir_music = root / "dir_music"
+            dir_music.write_bytes(b"music")
+            strong_burn = root / "强烧工具"
+            (strong_burn / "toy").mkdir(parents=True)
+            (strong_burn / "download.bat").touch()
+            with (
+                mock.patch.object(
+                    firmware_runtime.subprocess,
+                    "run",
+                    return_value=mock.Mock(returncode=0, stdout=""),
+                ),
+                self.assertRaisesRegex(
+                    firmware_runtime.FirmwareAutomationError,
+                    "未生成",
+                ),
+            ):
+                firmware_runtime.generate_firmware(
+                    dir_music,
+                    strong_burn,
+                    "toy",
+                    "download.bat",
+                    "jl_isd.fw",
+                    30,
+                )
 
     def test_installer_preserves_other_global_mcp_servers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

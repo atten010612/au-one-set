@@ -256,7 +256,18 @@ py -3 audio_processor.py "D:\提示音" --keep-tail-silence 0.03
   "packres_input_directory": "D:\\soft\\语音烧录\\杰理音频转换工具\\test_dir",
   "packres_batch_name": "new_packres.bat",
   "packres_output_name": "dir_music",
-  "packres_timeout_seconds": 60
+  "packres_timeout_seconds": 60,
+  "firmware_enabled": true,
+  "strong_burn_directory": "%AU_TASK_SKILL_HOME%\\vendor\\强烧工具",
+  "strong_burn_toy_directory_name": "toy",
+  "strong_burn_batch_name": "download.bat",
+  "strong_burn_firmware_name": "jl_isd.fw",
+  "strong_burn_timeout_seconds": 120,
+  "authorization_directory": "%AU_TASK_SKILL_HOME%\\vendor\\AD15n授权工具",
+  "authorization_executable_name": "固件文件烧写授权工具_1.5.4.exe",
+  "authorization_key_name": "26华钜芯-AD15N-9016-AA515221.lkey",
+  "authorization_window_title_regex": ".*固件文件烧写授权工具.*",
+  "authorization_timeout_seconds": 60
 }
 ```
 
@@ -356,7 +367,13 @@ UIA SelectionItem 模式选择，并读取 `is_selected` 校验，不使用受 D
 7. 清理 `packres_input_directory` 中上次遗留的杰理格式文件，再将
    `converted` 中的 `.a/.e/.f1a/.f1b/.f1c/.ump3` 复制进去；
 8. 在 `test_dir` 中执行 `new_packres.bat`；
-9. 校验 `test_dir\dir_music` 已生成或更新并显示“输出成功”。
+9. 校验 `test_dir\dir_music` 已生成或更新并显示“输出成功”；
+10. 覆盖复制到 `强烧工具\toy\dir_music`，删除旧 `toy\jl_isd.fw`；
+11. 从 `强烧工具` 目录执行 `download.bat`；
+12. 确认 `toy` 中生成新的 `jl_isd.fw`；
+13. 启动 `固件文件烧写授权工具_1.5.4.exe`，选择新固件与配置的 KEY；
+14. 选择“无限制”并点击“授权”；
+15. 检测新增或更新的 `.fw` 文件后报告成功。
 
 换到其他电脑时，在同一个 `audio_processor_config.json` 中修改：
 
@@ -404,8 +421,14 @@ automated using 32-bit Python”警告；这不是失败。脚本使用其实际
 `音频转换工具/AD140打包工具/packres/pRFiles.exe` 推导到同一套工具根
 目录下的 `音频转换工具/test_dir`。
 
+`download.bat` 同样以无窗口方式执行，工作目录固定为 `强烧工具`，默认
+超时120秒。授权工具是必须显示的 GUI；自动化会操作两个“打开”按钮、
+“无限制”和“授权”。控件识别失败时会在授权工具目录写出
+`authorization-controls.txt`。
+
 脚本启动的控制台程序均使用 Windows 无窗口模式：包括
-`ffmpeg/ffprobe`、`winget`、自动安装依赖的 `pip`、`new_packres.bat`
+`ffmpeg/ffprobe`、`winget`、自动安装依赖的 `pip`、`new_packres.bat`、
+`download.bat`
 以及 MCP 工作进程和取消任务使用的 `taskkill`，运行时不会再弹出或闪过
 额外的 CMD 窗口。转换工具和 `pRFiles.exe` 本身是 GUI 程序，且自动化
 依赖其窗口、文件选择对话框和键盘输入，因此不能隐藏；它们不会创建额外

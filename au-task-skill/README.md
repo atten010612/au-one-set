@@ -15,7 +15,8 @@ au-task-skill\
 │   ├── au_task.py
 │   ├── mcp_server.py
 │   ├── converter_runtime.py
-│   └── packer_runtime.py
+│   ├── packer_runtime.py
+│   └── firmware_runtime.py
 ├── audio_processor_config.json
 ├── requirements.txt
 ├── install_cursor.py
@@ -24,13 +25,19 @@ au-task-skill\
     ├── converter\
     │   ├── 音频文件转换工具_1.2.2.exe
     │   └── 转换工具原有依赖
-    └── ad140\
+    ├── ad140\
         ├── packres\
         │   ├── pRFiles.exe
         │   └── pRFiles原有依赖
         └── test_dir\
             ├── packres.exe
             └── new_packres.bat
+    ├── 强烧工具\
+    │   ├── download.bat
+    │   └── toy\
+    └── AD15n授权工具\
+        ├── 固件文件烧写授权工具_1.5.4.exe
+        └── 26华钜芯-AD15N-9016-AA515221.lkey
 ```
 
 不要保留旧工程根目录下的 `vendor`，也不要在上述路径中再套一层原文件夹。
@@ -39,9 +46,9 @@ au-task-skill\
 
 | 命令 | 功能 | MCP模式 |
 | --- | --- | ---: |
-| `/au-task0` | 去除文件名空白 → 转换 → 打包 | 2 |
+| `/au-task0` | 去除文件名空白 → 转换 → 打包 → 强烧 → 授权 | 2 |
 | `/au-task1` | 去除文件名空白 → 仅转换，输出 `converted` | 3 |
-| `/au-task2` | 仅打包，输出 `OUTPUT.LST` 和 `dir_music` | 4 |
+| `/au-task2` | 从 `converted` 开始打包 → 强烧 → 授权 | 4 |
 
 ## 前置条件
 
@@ -102,6 +109,11 @@ Developer: Reload Window
 
 Skill 会检查环境、调用正确的 MCP 模式、轮询进度、支持取消并汇报产物。
 没有拖入或 `@` 指定路径时会要求用户补充，不会误处理当前工作区。
+
+打包生成 `dir_music` 后，流程会将它覆盖复制到 `强烧工具\toy`，删除旧的
+`jl_isd.fw`，在 `强烧工具` 目录执行 `download.bat`。检测到新的
+`toy\jl_isd.fw` 后，流程会启动 AD15n 授权工具，选择配置中的 KEY、
+选择“无限制”并授权；只有检测到新增或更新的 `.fw` 文件才会报告成功。
 
 ## 作为独立Git仓库
 

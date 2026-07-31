@@ -33,6 +33,7 @@ class SkillTests(unittest.TestCase):
         self.assertIn('"mcpServers"', installer_module)
         self.assertTrue((root / "runtime" / "mcp_server.py").is_file())
         self.assertTrue((root / "runtime" / "au_task.py").is_file())
+        self.assertTrue((root / "runtime" / "firmware_runtime.py").is_file())
         self.assertTrue(
             (root / "vendor" / "converter" / "README.txt").is_file()
         )
@@ -41,6 +42,12 @@ class SkillTests(unittest.TestCase):
         )
         self.assertTrue(
             (root / "vendor" / "ad140" / "test_dir" / "README.txt").is_file()
+        )
+        self.assertTrue(
+            (root / "vendor" / "强烧工具" / "README.txt").is_file()
+        )
+        self.assertTrue(
+            (root / "vendor" / "AD15n授权工具" / "README.txt").is_file()
         )
 
 
