@@ -390,9 +390,6 @@ class WorkflowManager:
                     artifacts[name] = str(path.resolve())
             if config.get("firmware_enabled", True):
                 strong_burn = expand_environment_path(config["strong_burn_directory"])
-                authorization = expand_environment_path(
-                    config["authorization_directory"]
-                )
                 toy = strong_burn / config.get(
                     "strong_burn_toy_directory_name",
                     "toy",
@@ -403,15 +400,14 @@ class WorkflowManager:
                 )
                 if firmware.is_file():
                     artifacts["jl_isd.fw"] = str(firmware.resolve())
-                authorized = sorted(
-                    authorization.glob("*.fw"),
-                    key=lambda path: path.stat().st_mtime_ns,
-                    reverse=True,
-                )
-                if authorized:
-                    artifacts["authorized_firmware"] = str(
-                        authorized[0].resolve()
-                    )
+                for line in reversed(job.logs):
+                    if line.startswith("[授权] 已授权固件："):
+                        authorized = Path(line.split("：", 1)[1].strip())
+                        if authorized.is_file():
+                            artifacts["authorized_firmware"] = str(
+                                authorized.resolve()
+                            )
+                        break
         except Exception:
             pass
         return artifacts

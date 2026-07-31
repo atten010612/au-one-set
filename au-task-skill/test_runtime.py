@@ -122,6 +122,72 @@ class RuntimeTests(unittest.TestCase):
                     30,
                 )
 
+    def test_unlimited_radio_is_selected_and_verified(self) -> None:
+        class Radio:
+            selected = False
+
+            @staticmethod
+            def window_text() -> str:
+                return "无限制"
+
+            @staticmethod
+            def class_name() -> str:
+                return "TRadioButton"
+
+            @staticmethod
+            def is_enabled() -> bool:
+                return True
+
+            def get_check_state(self) -> int:
+                return int(self.selected)
+
+            def click_input(self) -> None:
+                self.selected = True
+
+        radio = Radio()
+        window = mock.Mock()
+        window.descendants.return_value = [radio]
+        firmware_runtime._select_unlimited_radio(window)
+        self.assertTrue(radio.selected)
+
+    def test_artifact_discovery_uses_authorization_log_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            test_dir = root / "test_dir"
+            toy = root / "强烧工具" / "toy"
+            authorization = root / "AD15n授权工具"
+            test_dir.mkdir()
+            toy.mkdir(parents=True)
+            authorization.mkdir()
+            generated = toy / "jl_isd.fw"
+            generated.write_bytes(b"generated")
+            stale = authorization / "old.fw"
+            stale.write_bytes(b"stale")
+            authorized = toy / "authorized.fw"
+            authorized.write_bytes(b"authorized")
+            config = {
+                "packres_input_directory": str(test_dir),
+                "packres_output_name": "dir_music",
+                "firmware_enabled": True,
+                "strong_burn_directory": str(toy.parent),
+                "strong_burn_toy_directory_name": "toy",
+                "strong_burn_firmware_name": "jl_isd.fw",
+                "authorization_directory": str(authorization),
+            }
+            with mock.patch.object(mcp_server, "load_config", return_value=config):
+                artifacts = mcp_server.discover_artifacts(
+                    [],
+                    [f"[授权] 已授权固件：{authorized}"],
+                )
+            self.assertEqual(
+                artifacts["authorized_firmware"],
+                str(authorized.resolve()),
+            )
+            self.assertNotEqual(
+                artifacts["authorized_firmware"],
+                str(stale.resolve()),
+            )
+
     def test_installer_preserves_other_global_mcp_servers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "skill"

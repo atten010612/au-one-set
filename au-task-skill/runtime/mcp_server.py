@@ -118,7 +118,7 @@ class JobManager:
                 "created_at": job.created_at,
                 "started_at": job.started_at,
                 "finished_at": job.finished_at,
-                "artifacts": discover_artifacts(job.input_paths),
+                "artifacts": discover_artifacts(job.input_paths, job.logs),
             }
 
     def list(self) -> list[dict[str, Any]]:
@@ -344,7 +344,10 @@ def check_environment() -> dict[str, Any]:
     }
 
 
-def discover_artifacts(input_paths: list[str]) -> dict[str, Any]:
+def discover_artifacts(
+    input_paths: list[str],
+    logs: list[str] | None = None,
+) -> dict[str, Any]:
     artifacts: dict[str, Any] = {}
     converted: list[str] = []
     for raw in input_paths:
@@ -368,14 +371,14 @@ def discover_artifacts(input_paths: list[str]) -> dict[str, Any]:
             firmware = toy / config.get("strong_burn_firmware_name", "jl_isd.fw")
             if firmware.is_file():
                 artifacts["jl_isd.fw"] = str(firmware.resolve())
-            authorization = resolve_config_path(config["authorization_directory"])
-            authorized = sorted(
-                authorization.glob("*.fw"),
-                key=lambda path: path.stat().st_mtime_ns,
-                reverse=True,
-            )
-            if authorized:
-                artifacts["authorized_firmware"] = str(authorized[0].resolve())
+            for line in reversed(logs or []):
+                if line.startswith("[授权] 已授权固件："):
+                    authorized = Path(line.split("：", 1)[1].strip())
+                    if authorized.is_file():
+                        artifacts["authorized_firmware"] = str(
+                            authorized.resolve()
+                        )
+                    break
     except Exception:
         pass
     return artifacts
